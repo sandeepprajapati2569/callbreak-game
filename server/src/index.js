@@ -1,11 +1,37 @@
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
+import cors from 'cors';
 import registerHandlers from './socket/handlers.js';
 
 const PORT = process.env.PORT || 3001;
-const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
-const ALLOWED_ORIGINS = CLIENT_ORIGIN.split(',').map(s => s.trim());
+const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || '';
+
+// Build allowed origins list — always include localhost for dev
+const ALLOWED_ORIGINS = [
+  'http://localhost:5173',
+  'http://localhost:4173',
+  ...CLIENT_ORIGIN.split(',').map(s => s.trim()).filter(Boolean),
+];
+
+// CORS config shared by Express and Socket.IO
+const corsConfig = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (curl, mobile apps, etc.)
+    if (!origin) return callback(null, true);
+    // Allow any vercel.app or onrender.com subdomain, plus explicit origins
+    if (
+      ALLOWED_ORIGINS.includes(origin) ||
+      origin.endsWith('.vercel.app') ||
+      origin.endsWith('.onrender.com')
+    ) {
+      return callback(null, origin);
+    }
+    callback(null, false);
+  },
+  methods: ['GET', 'POST'],
+  credentials: true,
+};
 
 // ---------------------------------------------------------------------------
 // Express setup
@@ -13,6 +39,7 @@ const ALLOWED_ORIGINS = CLIENT_ORIGIN.split(',').map(s => s.trim());
 const app = express();
 const httpServer = createServer(app);
 
+app.use(cors(corsConfig));
 app.use(express.json());
 
 // Health check endpoint
@@ -30,11 +57,7 @@ app.get('/', (_req, res) => {
 // Socket.IO setup
 // ---------------------------------------------------------------------------
 const io = new Server(httpServer, {
-  cors: {
-    origin: ALLOWED_ORIGINS,
-    methods: ['GET', 'POST'],
-    credentials: true,
-  },
+  cors: corsConfig,
 });
 
 // Shared state
