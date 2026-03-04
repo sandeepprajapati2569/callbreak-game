@@ -6,7 +6,8 @@ import { useGame } from '../../context/GameContext'
 export default function BiddingPanel() {
   const { socket } = useSocket()
   const { state } = useGame()
-  const { myTurn, bids, players, playerId, currentTurn } = state
+  const { myTurn, bids, players, playerId, currentTurn, tricksPerRound } = state
+  const maxBid = tricksPerRound || 13
   const [selectedBid, setSelectedBid] = useState(null)
 
   const handleConfirmBid = () => {
@@ -19,26 +20,24 @@ export default function BiddingPanel() {
 
   return (
     <motion.div
-      className="absolute inset-0 z-50 flex items-center justify-center"
+      className="absolute top-0 left-0 right-0 z-50 flex justify-center pt-3 px-3 pointer-events-none"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.3 }}
     >
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-
-      {/* Panel */}
+      {/* Panel - compact, positioned at top so hand stays visible */}
       <motion.div
-        className="relative glass-panel p-8 min-w-[360px] max-w-md"
-        initial={{ scale: 0.8, y: 30 }}
+        className="pointer-events-auto glass-panel p-4 sm:p-6 w-full max-w-sm"
+        style={{ border: '1px solid rgba(212, 175, 55, 0.4)' }}
+        initial={{ scale: 0.8, y: -30 }}
         animate={{ scale: 1, y: 0 }}
-        exit={{ scale: 0.8, y: 30, opacity: 0 }}
+        exit={{ scale: 0.8, y: -30, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 250, damping: 22 }}
       >
         {/* Title */}
         <h2
-          className="text-2xl font-bold text-center mb-6 tracking-wide"
+          className="text-lg sm:text-xl font-bold text-center mb-3 tracking-wide"
           style={{ color: 'var(--gold)' }}
         >
           {myTurn ? 'Place Your Bid' : 'Bidding Round'}
@@ -46,13 +45,13 @@ export default function BiddingPanel() {
 
         {/* Already placed bids */}
         {Object.keys(bids).length > 0 && (
-          <div className="mb-5 space-y-1.5">
+          <div className="mb-3 space-y-1">
             {players.map((p) => {
               if (bids[p.id] === undefined) return null
               return (
                 <div
                   key={p.id}
-                  className="flex items-center justify-between text-sm px-3 py-1.5 rounded-lg bg-black/20"
+                  className="flex items-center justify-between text-xs sm:text-sm px-3 py-1 rounded-lg bg-black/20"
                 >
                   <span className={p.id === playerId ? 'text-gold font-medium' : 'opacity-70'}>
                     {p.name}
@@ -67,13 +66,15 @@ export default function BiddingPanel() {
 
         {myTurn ? (
           <>
+            <p className="text-xs text-center opacity-50 mb-2">Look at your cards below, then bid</p>
+
             {/* Bid number grid */}
-            <div className="grid grid-cols-5 gap-2 mb-6">
-              {Array.from({ length: 13 }, (_, i) => i + 1).map((num) => (
+            <div className={`grid ${maxBid <= 10 ? 'grid-cols-5' : maxBid <= 13 ? 'grid-cols-7' : 'grid-cols-9'} gap-1.5 sm:gap-2 mb-3`}>
+              {Array.from({ length: maxBid }, (_, i) => i + 1).map((num) => (
                 <motion.button
                   key={num}
                   onClick={() => setSelectedBid(num)}
-                  className={`w-12 h-12 rounded-lg font-bold text-lg transition-all duration-200 ${
+                  className={`w-9 h-9 sm:w-10 sm:h-10 rounded-lg font-bold text-sm sm:text-base transition-all duration-200 ${
                     selectedBid === num
                       ? 'text-black'
                       : 'bg-white/5 text-white/80 hover:bg-white/10 border border-white/10'
@@ -98,7 +99,7 @@ export default function BiddingPanel() {
             <motion.button
               onClick={handleConfirmBid}
               disabled={selectedBid === null}
-              className="w-full py-3 rounded-xl font-bold text-lg text-black transition-all
+              className="w-full py-2.5 rounded-xl font-bold text-base text-black transition-all
                 disabled:opacity-30 disabled:cursor-not-allowed"
               style={{
                 background: 'linear-gradient(135deg, var(--gold) 0%, var(--gold-light) 100%)',
@@ -111,8 +112,8 @@ export default function BiddingPanel() {
             </motion.button>
           </>
         ) : (
-          <div className="text-center py-8">
-            <div className="flex items-center justify-center gap-2 mb-3">
+          <div className="text-center py-4">
+            <div className="flex items-center justify-center gap-2 mb-2">
               <motion.div
                 className="w-2 h-2 rounded-full bg-[var(--gold)]"
                 animate={{ opacity: [0.3, 1, 0.3] }}
@@ -129,7 +130,7 @@ export default function BiddingPanel() {
                 transition={{ duration: 1.2, repeat: Infinity, delay: 0.4 }}
               />
             </div>
-            <p className="opacity-60">
+            <p className="opacity-60 text-sm">
               Waiting for{' '}
               <span className="text-gold font-medium">
                 {currentBidder?.name || 'player'}

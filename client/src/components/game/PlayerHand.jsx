@@ -33,12 +33,14 @@ export default function PlayerHand() {
 
   const cardCount = sortedHand.length
   // Calculate spread and overlap based on card count
-  const maxSpread = 40 // max degrees of spread
-  const spreadAngle = Math.min(maxSpread, cardCount * 3)
-  const overlapPx = cardCount > 8 ? 52 : 60
+  // Use smaller values on mobile via window width check
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640
+  const maxSpread = isMobile ? 30 : 40
+  const spreadAngle = Math.min(maxSpread, cardCount * (isMobile ? 2.2 : 3))
+  const overlapPx = isMobile ? (cardCount > 8 ? 44 : 48) : (cardCount > 8 ? 52 : 60)
 
   return (
-    <div className="flex justify-center items-end pb-3 px-4 hand-fan" style={{ minHeight: '140px' }}>
+    <div className="flex justify-center items-end pb-2 sm:pb-3 px-2 sm:px-4 hand-fan" style={{ minHeight: isMobile ? '100px' : '140px' }}>
       <AnimatePresence mode="popLayout">
         {sortedHand.map((card, index) => {
           const cardKey = `${card.suit}-${card.rank}`

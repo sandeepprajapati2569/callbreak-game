@@ -30,10 +30,10 @@ export default function Card({
   const suitColor = SUIT_COLORS[suit] || '#1a1a2e'
   const rankLabel = String(rank)
 
-  const width = small ? 'w-12' : 'w-20'
-  const height = small ? 'h-16' : 'h-28'
-  const fontSize = small ? 'text-xs' : 'text-sm'
-  const suitSize = small ? 'text-lg' : 'text-2xl'
+  const width = small ? 'w-10 sm:w-12' : 'w-14 sm:w-20'
+  const height = small ? 'h-14 sm:h-16' : 'h-20 sm:h-28'
+  const fontSize = small ? 'text-[10px] sm:text-xs' : 'text-xs sm:text-sm'
+  const suitSize = small ? 'text-base sm:text-lg' : 'text-xl sm:text-2xl'
 
   if (!faceUp) {
     return (

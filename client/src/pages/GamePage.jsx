@@ -19,7 +19,7 @@ export default function GamePage() {
   }, [state.phase, state.roomCode, navigate])
 
   return (
-    <div className="w-screen h-screen overflow-hidden relative">
+    <div className="w-screen h-screen overflow-hidden relative" style={{ position: 'fixed', inset: 0 }}>
       <GameBoard />
 
       <AnimatePresence>

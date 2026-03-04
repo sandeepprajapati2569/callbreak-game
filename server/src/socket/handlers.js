@@ -116,7 +116,7 @@ export default function registerHandlers(io, socket, rooms, games) {
   // -------------------------------------------------------------------------
   // create-room
   // -------------------------------------------------------------------------
-  socket.on('create-room', ({ playerName }, callback) => {
+  socket.on('create-room', ({ playerName, maxPlayers }, callback) => {
     let code;
     do {
       code = generateRoomCode();
@@ -124,7 +124,7 @@ export default function registerHandlers(io, socket, rooms, games) {
 
     const playerId = socket.id;
     const player = new Player(playerId, playerName, socket.id);
-    const room = new Room(code, playerId);
+    const room = new Room(code, playerId, maxPlayers || 4);
 
     room.addPlayer(player);
     rooms.set(code, room);
@@ -135,6 +135,7 @@ export default function registerHandlers(io, socket, rooms, games) {
     const response = {
       roomCode: code,
       playerId,
+      maxPlayers: room.maxPlayers,
       players: room.players.map((p) => ({
         id: p.id,
         name: p.name,
@@ -190,7 +191,7 @@ export default function registerHandlers(io, socket, rooms, games) {
       isConnected: p.isConnected,
     }));
 
-    const joinResponse = { roomCode: code, playerId, players: playerList };
+    const joinResponse = { roomCode: code, playerId, maxPlayers: room.maxPlayers, players: playerList };
 
     if (typeof callback === 'function') {
       callback({ success: true, ...joinResponse });
@@ -203,6 +204,7 @@ export default function registerHandlers(io, socket, rooms, games) {
     io.to(code).emit('player-joined', {
       playerId,
       playerName,
+      maxPlayers: room.maxPlayers,
       players: playerList,
     });
   });
@@ -237,7 +239,7 @@ export default function registerHandlers(io, socket, rooms, games) {
       callback({ success: true, isReady: player.isReady });
     }
 
-    // If all 4 players are ready, start the game
+    // If all players are ready, start the game
     if (room.allReady()) {
       room.status = 'in-progress';
 

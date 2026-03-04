@@ -51,18 +51,26 @@ export function shuffle(deck) {
 }
 
 /**
- * Deals a shuffled deck into 4 hands of 13 cards each.
- * Returns an array of 4 arrays, each containing 13 card objects.
+ * Deals a shuffled deck into hands for the given number of players.
+ * Extra cards (if 52 doesn't divide evenly) are discarded.
+ * @param {Array} deck - 52-card deck.
+ * @param {number} numPlayers - Number of players (2-5), default 4.
+ * @returns {Array} Array of numPlayers arrays, each containing cards.
  */
-export function deal(deck) {
+export function deal(deck, numPlayers = 4) {
   if (deck.length !== 52) {
     throw new Error(`Cannot deal: deck has ${deck.length} cards, expected 52`);
   }
+  if (numPlayers < 2 || numPlayers > 5) {
+    throw new Error(`numPlayers must be between 2 and 5, got ${numPlayers}`);
+  }
 
-  const hands = [[], [], [], []];
+  const cardsPerPlayer = Math.floor(52 / numPlayers);
+  const totalCards = cardsPerPlayer * numPlayers;
+  const hands = Array.from({ length: numPlayers }, () => []);
 
-  for (let i = 0; i < deck.length; i++) {
-    hands[i % 4].push(deck[i]);
+  for (let i = 0; i < totalCards; i++) {
+    hands[i % numPlayers].push(deck[i]);
   }
 
   return hands;

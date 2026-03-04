@@ -24,6 +24,7 @@ export default function LandingPage() {
   const [showJoin, setShowJoin] = useState(false)
   const [roomCode, setRoomCode] = useState('')
   const [loading, setLoading] = useState(false)
+  const [maxPlayers, setMaxPlayers] = useState(4)
 
   const handleCreateRoom = () => {
     if (!playerName.trim()) {
@@ -36,7 +37,7 @@ export default function LandingPage() {
     }
     setLoading(true)
     dispatch({ type: 'SET_PLAYER_NAME', payload: playerName.trim() })
-    socket.emit('create-room', { playerName: playerName.trim() }, (response) => {
+    socket.emit('create-room', { playerName: playerName.trim(), maxPlayers }, (response) => {
       setLoading(false)
       if (response?.error) {
         toast.error(response.error)
@@ -76,7 +77,7 @@ export default function LandingPage() {
   }
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center relative overflow-hidden"
+    <div className="min-h-screen w-full flex items-center justify-center py-8 relative overflow-x-hidden overflow-y-auto"
       style={{
         background: 'radial-gradient(ellipse at center, #0e4a2e 0%, #0A3622 35%, #072818 70%, #051a10 100%)',
       }}
@@ -112,7 +113,7 @@ export default function LandingPage() {
 
       {/* Main content */}
       <motion.div
-        className="relative z-10 flex flex-col items-center gap-8 w-full max-w-md px-6"
+        className="relative z-10 flex flex-col items-center gap-6 sm:gap-8 w-full max-w-md px-4 sm:px-6"
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.8, ease: 'easeOut' }}
@@ -130,7 +131,7 @@ export default function LandingPage() {
           </motion.div>
 
           <motion.h1
-            className="text-6xl font-bold tracking-wider mb-3"
+            className="text-4xl sm:text-6xl font-bold tracking-wider mb-3"
             style={{
               color: 'var(--gold)',
               textShadow: '0 2px 20px rgba(212, 175, 55, 0.3), 0 1px 5px rgba(0,0,0,0.5)',
@@ -186,6 +187,31 @@ export default function LandingPage() {
                 if (e.key === 'Enter' && showJoin) handleJoinRoom()
               }}
             />
+          </div>
+
+          {/* Player count selector */}
+          <div className="flex items-center justify-center gap-2">
+            <span className="text-sm opacity-50 mr-1">Players:</span>
+            {[2, 3, 4, 5].map((n) => (
+              <motion.button
+                key={n}
+                onClick={() => setMaxPlayers(n)}
+                className={`w-10 h-10 rounded-lg font-bold text-sm transition-all ${
+                  maxPlayers === n
+                    ? 'text-black'
+                    : 'bg-white/5 text-white/80 hover:bg-white/10 border border-white/10'
+                }`}
+                style={
+                  maxPlayers === n
+                    ? { background: 'linear-gradient(135deg, var(--gold), var(--gold-light))' }
+                    : {}
+                }
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                {n}
+              </motion.button>
+            ))}
           </div>
 
           {/* Buttons */}
@@ -271,7 +297,7 @@ export default function LandingPage() {
           animate={{ opacity: 0.3 }}
           transition={{ delay: 1, duration: 0.6 }}
         >
-          4 Players &middot; 5 Rounds &middot; Spades are Trump
+          2-5 Players &middot; 5 Rounds &middot; Spades are Trump
         </motion.p>
       </motion.div>
     </div>

@@ -16,7 +16,7 @@ export default function LobbyPage() {
   const [showChat, setShowChat] = useState(false)
   const chatEndRef = useRef(null)
 
-  const { roomCode, players, playerId, messages } = state
+  const { roomCode, players, playerId, messages, maxPlayers } = state
 
   // Navigate to landing if no room
   useEffect(() => {
@@ -32,9 +32,9 @@ export default function LobbyPage() {
     }
   }, [state.phase, navigate])
 
-  // Countdown when all 4 players ready
+  // Countdown when all players ready
   useEffect(() => {
-    const allReady = players.length === 4 && players.every((p) => p.isReady)
+    const allReady = players.length === maxPlayers && players.every((p) => p.isReady)
     if (allReady) {
       setCountdown(3)
     } else {
@@ -77,19 +77,20 @@ export default function LobbyPage() {
   const myPlayer = players.find((p) => p.id === playerId)
   const isReady = myPlayer?.isReady || false
 
-  const seatSlots = [0, 1, 2, 3]
+  const seatSlots = Array.from({ length: maxPlayers }, (_, i) => i)
+  const gridClass = { 2: 'grid-cols-2', 3: 'grid-cols-3', 4: 'grid-cols-2', 5: 'grid-cols-3' }[maxPlayers] || 'grid-cols-2'
 
   return (
     <div
-      className="min-h-screen w-full flex items-center justify-center"
+      className="min-h-screen w-full flex items-center justify-center overflow-auto"
       style={{
         background: 'radial-gradient(ellipse at center, #0e4a2e 0%, #0A3622 35%, #072818 70%, #051a10 100%)',
       }}
     >
-      <div className="flex gap-6 max-w-5xl w-full px-6 py-8">
+      <div className="flex flex-col sm:flex-row gap-4 sm:gap-6 max-w-5xl w-full px-4 sm:px-6 py-4 sm:py-8">
         {/* Main lobby panel */}
         <motion.div
-          className="flex-1 glass-panel p-8 flex flex-col items-center gap-6"
+          className="flex-1 glass-panel p-4 sm:p-8 flex flex-col items-center gap-4 sm:gap-6"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
@@ -99,7 +100,7 @@ export default function LobbyPage() {
             <p className="text-sm uppercase tracking-widest opacity-50 mb-2">Room Code</p>
             <div className="flex items-center gap-3">
               <motion.span
-                className="text-4xl font-mono font-bold tracking-[0.4em]"
+                className="text-2xl sm:text-4xl font-mono font-bold tracking-[0.3em] sm:tracking-[0.4em]"
                 style={{ color: 'var(--gold)' }}
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -121,8 +122,8 @@ export default function LobbyPage() {
             </div>
           </div>
 
-          {/* Player seats - 2x2 grid */}
-          <div className="grid grid-cols-2 gap-4 w-full max-w-sm">
+          {/* Player seats grid */}
+          <div className={`grid ${gridClass} gap-4 w-full max-w-sm`}>
             {seatSlots.map((idx) => {
               const player = players[idx]
               const isSelf = player?.id === playerId
@@ -245,21 +246,21 @@ export default function LobbyPage() {
 
           {/* Player count */}
           <p className="text-sm opacity-40">
-            {players.length}/4 Players
+            {players.length}/{maxPlayers} Players
           </p>
         </motion.div>
 
         {/* Chat panel */}
         <motion.div
           className={`glass-panel flex flex-col transition-all duration-300 ${
-            showChat ? 'w-80' : 'w-12'
+            showChat ? 'w-full sm:w-80' : 'w-full sm:w-12 h-12 sm:h-auto'
           }`}
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.3, duration: 0.5 }}
         >
           {showChat ? (
-            <div className="flex flex-col h-[500px] p-4">
+            <div className="flex flex-col h-[250px] sm:h-[500px] p-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-semibold text-gold text-sm uppercase tracking-wider">Chat</h3>
                 <button

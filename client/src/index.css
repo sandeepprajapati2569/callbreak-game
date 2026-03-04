@@ -17,7 +17,6 @@ body {
   background: var(--green-dark);
   color: #f0f0f0;
   margin: 0;
-  overflow: hidden;
 }
 
 /* ===== Card Table Felt Background ===== */

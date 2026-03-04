@@ -1,13 +1,13 @@
-const MAX_PLAYERS = 4;
-
 export default class Room {
   /**
    * @param {string} code - Unique room code (e.g., 6-char alphanumeric).
    * @param {string} hostId - Player ID of the room creator.
+   * @param {number} maxPlayers - Max players for this room (2-5), default 4.
    */
-  constructor(code, hostId) {
+  constructor(code, hostId, maxPlayers = 4) {
     this.code = code;
     this.hostId = hostId;
+    this.maxPlayers = Math.min(Math.max(Number(maxPlayers) || 4, 2), 5);
     this.players = [];
     this.game = null;
     this.status = 'waiting'; // 'waiting' | 'in-progress' | 'finished'
@@ -69,7 +69,7 @@ export default class Room {
    * @returns {boolean}
    */
   isFull() {
-    return this.players.length >= MAX_PLAYERS;
+    return this.players.length >= this.maxPlayers;
   }
 
   /**

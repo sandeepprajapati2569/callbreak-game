@@ -14,15 +14,15 @@ export default function PlayerStation({ player, position, isCurrentTurn, isSelf 
   const cardCount = player.cardCount ?? 0
   const initial = player.name?.charAt(0).toUpperCase() || '?'
 
-  // Layout orientation based on position
-  const isVertical = position === 'top' || position === 'bottom'
+  // Layout orientation based on position - all positions use vertical layout
+  const isVertical = true
 
   return (
     <motion.div
-      className={`flex items-center gap-3 glass-panel px-4 py-3 relative
+      className={`flex items-center gap-1.5 sm:gap-3 glass-panel px-2 py-2 sm:px-4 sm:py-3 relative
         ${isCurrentTurn ? 'active-glow' : ''}
         ${isDisconnected ? 'opacity-40' : ''}
-        ${isVertical ? 'flex-col min-w-[120px]' : 'flex-col min-w-[100px]'}
+        ${isVertical ? 'flex-col min-w-[80px] sm:min-w-[120px]' : 'flex-col min-w-[70px] sm:min-w-[100px]'}
       `}
       initial={{ opacity: 0, scale: 0.8 }}
       animate={{ opacity: isDisconnected ? 0.4 : 1, scale: 1 }}
@@ -30,7 +30,7 @@ export default function PlayerStation({ player, position, isCurrentTurn, isSelf 
     >
       {/* Avatar */}
       <div
-        className={`w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold flex-shrink-0 ${
+        className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-sm sm:text-lg font-bold flex-shrink-0 ${
           isCurrentTurn ? 'text-black' : 'bg-white/10 text-white'
         }`}
         style={
@@ -44,9 +44,9 @@ export default function PlayerStation({ player, position, isCurrentTurn, isSelf 
 
       {/* Info */}
       <div className="flex flex-col items-center gap-1">
-        <span className="text-sm font-medium truncate max-w-[100px]">
+        <span className="text-xs sm:text-sm font-medium truncate max-w-[70px] sm:max-w-[100px]">
           {player.name}
-          {isSelf && <span className="text-xs opacity-40 ml-1">(You)</span>}
+          {isSelf && <span className="text-[10px] sm:text-xs opacity-40 ml-1">(You)</span>}
         </span>
 
         {/* Bid & Won badges */}
@@ -104,14 +104,27 @@ export default function PlayerStation({ player, position, isCurrentTurn, isSelf 
         </div>
       )}
 
-      {/* Turn indicator dot */}
+      {/* Turn indicator */}
       {isCurrentTurn && (
-        <motion.div
-          className="absolute -top-1 -right-1 w-3 h-3 rounded-full"
-          style={{ background: 'var(--gold)' }}
-          animate={{ scale: [1, 1.3, 1] }}
-          transition={{ duration: 1.5, repeat: Infinity }}
-        />
+        <>
+          <motion.div
+            className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full"
+            style={{ background: 'var(--gold)', boxShadow: '0 0 8px rgba(212, 175, 55, 0.8)' }}
+            animate={{ scale: [1, 1.4, 1] }}
+            transition={{ duration: 1.2, repeat: Infinity }}
+          />
+          <motion.div
+            className="text-xs font-bold mt-1 px-2 py-0.5 rounded-full"
+            style={{
+              background: 'linear-gradient(135deg, var(--gold), var(--gold-light))',
+              color: '#000',
+            }}
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+          >
+            {isSelf ? 'YOUR TURN' : 'PLAYING'}
+          </motion.div>
+        </>
       )}
     </motion.div>
   )

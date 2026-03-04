@@ -15,26 +15,26 @@ const PHASES = {
 };
 
 const TOTAL_ROUNDS = 5;
-const TRICKS_PER_ROUND = 13;
 const TURN_TIMEOUT_MS = 30_000;
 const MIN_BID = 1;
-const MAX_BID = 13;
-const NUM_PLAYERS = 4;
 
 export default class Game extends EventEmitter {
   /**
    * @param {string} roomCode - The room this game belongs to.
-   * @param {Array} players - Array of Player instances (length 4).
+   * @param {Array} players - Array of Player instances (2-5 players).
    */
   constructor(roomCode, players) {
     super();
 
-    if (players.length !== NUM_PLAYERS) {
-      throw new Error(`Game requires exactly ${NUM_PLAYERS} players, got ${players.length}`);
+    if (players.length < 2 || players.length > 5) {
+      throw new Error(`Game requires 2-5 players, got ${players.length}`);
     }
 
     this.roomCode = roomCode;
     this.players = players;
+    this.numPlayers = players.length;
+    this.tricksPerRound = Math.floor(52 / this.numPlayers);
+    this.maxBid = this.tricksPerRound;
     this.phase = PHASES.WAITING;
 
     this.currentRound = 0;
@@ -82,8 +82,8 @@ export default class Game extends EventEmitter {
     }
 
     const bidNum = Number(bid);
-    if (!Number.isInteger(bidNum) || bidNum < MIN_BID || bidNum > MAX_BID) {
-      throw new Error(`Bid must be an integer between ${MIN_BID} and ${MAX_BID}`);
+    if (!Number.isInteger(bidNum) || bidNum < MIN_BID || bidNum > this.maxBid) {
+      throw new Error(`Bid must be an integer between ${MIN_BID} and ${this.maxBid}`);
     }
 
     this._clearTurnTimer();
@@ -95,7 +95,7 @@ export default class Game extends EventEmitter {
     // Determine next bidder before advancing turn
     let nextBidder = null;
     if (!allBid) {
-      const nextIndex = (this.currentTurnIndex + 1) % NUM_PLAYERS;
+      const nextIndex = (this.currentTurnIndex + 1) % this.numPlayers;
       nextBidder = this.players[nextIndex].id;
     }
 
@@ -169,8 +169,8 @@ export default class Game extends EventEmitter {
 
     // Determine next player before advancing turn
     let nextPlayer = null;
-    if (this.currentTrick.cards.length < NUM_PLAYERS) {
-      const nextIndex = (this.currentTurnIndex + 1) % NUM_PLAYERS;
+    if (this.currentTrick.cards.length < this.numPlayers) {
+      const nextIndex = (this.currentTurnIndex + 1) % this.numPlayers;
       nextPlayer = this.players[nextIndex].id;
     }
 
@@ -189,7 +189,7 @@ export default class Game extends EventEmitter {
     });
 
     // Check if the trick is complete
-    if (this.currentTrick.cards.length === NUM_PLAYERS) {
+    if (this.currentTrick.cards.length === this.numPlayers) {
       this._resolveTrick();
     } else {
       this._advanceTurn();
@@ -228,6 +228,9 @@ export default class Game extends EventEmitter {
     return {
       roomCode: this.roomCode,
       phase: this.phase,
+      numPlayers: this.numPlayers,
+      tricksPerRound: this.tricksPerRound,
+      maxBid: this.maxBid,
       currentRound: this.currentRound,
       currentTrickNumber: this.currentTrickNumber,
       currentTrick: {
@@ -292,7 +295,7 @@ export default class Game extends EventEmitter {
    * Advances the turn to the next player clockwise.
    */
   _advanceTurn() {
-    this.currentTurnIndex = (this.currentTurnIndex + 1) % NUM_PLAYERS;
+    this.currentTurnIndex = (this.currentTurnIndex + 1) % this.numPlayers;
   }
 
   /**
@@ -348,7 +351,7 @@ export default class Game extends EventEmitter {
     this.phase = PHASES.DEALING;
 
     const deck = shuffle(createDeck());
-    const hands = deal(deck);
+    const hands = deal(deck, this.numPlayers);
 
     this.players.forEach((player, index) => {
       player.reset();
@@ -368,7 +371,7 @@ export default class Game extends EventEmitter {
    */
   _startBidding() {
     this.phase = PHASES.BIDDING;
-    this.currentTurnIndex = (this.dealerIndex + 1) % NUM_PLAYERS;
+    this.currentTurnIndex = (this.dealerIndex + 1) % this.numPlayers;
 
     this.emit('bidding-start', {
       round: this.currentRound,
@@ -392,7 +395,7 @@ export default class Game extends EventEmitter {
     this.currentTrick = { cards: [], ledSuit: null };
 
     // First player to lead is left of dealer
-    this.currentTurnIndex = (this.dealerIndex + 1) % NUM_PLAYERS;
+    this.currentTurnIndex = (this.dealerIndex + 1) % this.numPlayers;
 
     const bidsMap = {};
     this.players.forEach((p) => { bidsMap[p.id] = p.bid; });
@@ -443,7 +446,7 @@ export default class Game extends EventEmitter {
 
     // Delay before proceeding to allow clients to see trick result
     setTimeout(() => {
-      if (this.currentTrickNumber >= TRICKS_PER_ROUND) {
+      if (this.currentTrickNumber >= this.tricksPerRound) {
         this._endRound();
       } else {
         this._nextTrick(winnerId);
@@ -531,7 +534,7 @@ export default class Game extends EventEmitter {
    */
   _nextRound() {
     this.currentRound += 1;
-    this.dealerIndex = (this.dealerIndex + 1) % NUM_PLAYERS;
+    this.dealerIndex = (this.dealerIndex + 1) % this.numPlayers;
     this.currentTrickNumber = 0;
     this.currentTrick = { cards: [], ledSuit: null };
 
@@ -619,4 +622,4 @@ export default class Game extends EventEmitter {
   }
 }
 
-export { PHASES, TOTAL_ROUNDS, TRICKS_PER_ROUND, TURN_TIMEOUT_MS };
+export { PHASES, TOTAL_ROUNDS, TURN_TIMEOUT_MS };

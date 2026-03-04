@@ -25,6 +25,8 @@ const initialState = {
   trickWinner: null,
   messages: [],
   dealerIndex: 0,
+  maxPlayers: 4,
+  tricksPerRound: 13,
 }
 
 function gameReducer(state, action) {
@@ -36,6 +38,7 @@ function gameReducer(state, action) {
         roomCode: action.payload.roomCode,
         playerId: action.payload.playerId,
         players: action.payload.players || [],
+        maxPlayers: action.payload.maxPlayers || 4,
       }
 
     case 'ROOM_JOINED':
@@ -45,12 +48,14 @@ function gameReducer(state, action) {
         roomCode: action.payload.roomCode,
         playerId: action.payload.playerId,
         players: action.payload.players || [],
+        maxPlayers: action.payload.maxPlayers || 4,
       }
 
     case 'PLAYER_JOINED':
       return {
         ...state,
         players: action.payload.players,
+        maxPlayers: action.payload.maxPlayers || state.maxPlayers,
       }
 
     case 'PLAYER_LEFT':
@@ -88,6 +93,7 @@ function gameReducer(state, action) {
         tricksWon: action.payload.tricksWon || {},
         trickWinner: null,
         playableCards: [],
+        tricksPerRound: action.payload.hand?.length || state.tricksPerRound,
       }
 
     case 'BIDDING_START':
