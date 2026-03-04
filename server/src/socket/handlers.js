@@ -190,10 +190,16 @@ export default function registerHandlers(io, socket, rooms, games) {
       isConnected: p.isConnected,
     }));
 
+    const joinResponse = { roomCode: code, playerId, players: playerList };
+
     if (typeof callback === 'function') {
-      callback({ success: true, roomCode: code, playerId, players: playerList });
+      callback({ success: true, ...joinResponse });
     }
 
+    // Emit room-joined to the joining player (mirrors room-created for host)
+    socket.emit('room-joined', joinResponse);
+
+    // Notify everyone in the room about the new player
     io.to(code).emit('player-joined', {
       playerId,
       playerName,
