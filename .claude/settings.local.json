@@ -16,7 +16,30 @@
       "Bash(vercel --version)",
       "Bash(git init)",
       "Bash(git add -A)",
-      "Bash(git commit -m \"Initial commit: Call Break multiplayer card game\")"
+      "Bash(git commit -m \"Initial commit: Call Break multiplayer card game\")",
+      "Bash(git rm -r --cached node_modules)",
+      "Bash(git add .gitignore)",
+      "Bash(git commit -m \"Add .gitignore, remove node_modules from tracking\")",
+      "Bash(vercel --yes --prod)",
+      "WebFetch(domain:server-one-tau-87.vercel.app)",
+      "WebFetch(domain:client-sable-delta-40.vercel.app)",
+      "Bash(curl -s https://server-one-tau-87.vercel.app/)",
+      "Bash(curl -s https://client-sable-delta-40.vercel.app/)",
+      "Bash(curl -s https://client-sable-delta-40.vercel.app/assets/index-CW7jAOyU.js)",
+      "Bash(curl -s \"https://server-one-tau-87.vercel.app/socket.io/?EIO=4&transport=polling\")",
+      "Bash(curl -sv \"https://server-one-tau-87.vercel.app/socket.io/?EIO=4&transport=polling\")",
+      "Bash(npm install -g @railway/cli)",
+      "Bash(railway version)",
+      "Bash(railway --help)",
+      "Bash(railway whoami)",
+      "Bash(railway login)",
+      "Bash(railway login --browserless)",
+      "mcp__Control_Chrome__list_tabs",
+      "mcp__Control_Chrome__execute_javascript",
+      "mcp__Control_Chrome__switch_to_tab",
+      "Bash(gh auth status)",
+      "Bash(brew install gh)",
+      "Bash(ssh -T git@github.com)"
     ]
   }
 }

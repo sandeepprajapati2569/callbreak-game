@@ -51,11 +51,14 @@ io.on('connection', (socket) => {
 });
 
 // ---------------------------------------------------------------------------
-// Start server
+// Start server (only in non-Vercel environments)
 // ---------------------------------------------------------------------------
-httpServer.listen(PORT, () => {
-  console.log(`Call Break server running on port ${PORT}`);
-  console.log(`Accepting connections from: ${CLIENT_ORIGIN}`);
-});
+if (!process.env.VERCEL) {
+  httpServer.listen(PORT, () => {
+    console.log(`Call Break server running on port ${PORT}`);
+    console.log(`Accepting connections from: ${CLIENT_ORIGIN}`);
+  });
+}
 
+export default app;
 export { app, httpServer, io };
