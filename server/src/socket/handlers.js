@@ -1,0 +1,413 @@
+import { randomBytes } from 'crypto';
+import Room from '../models/Room.js';
+import Player from '../models/Player.js';
+import Game from '../game/Game.js';
+
+// Characters that avoid ambiguity (no 0/O, 1/I/L)
+const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const CODE_LENGTH = 6;
+
+// Delay before clearing the trick cards on the client
+const TRICK_CLEAR_DELAY_MS = 1500;
+
+// Time before cleaning up an empty room
+const ROOM_CLEANUP_DELAY_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Generates a random room code using unambiguous characters.
+ * @returns {string} A 6-character room code.
+ */
+function generateRoomCode() {
+  const bytes = randomBytes(CODE_LENGTH);
+  let code = '';
+
+  for (let i = 0; i < CODE_LENGTH; i++) {
+    code += CODE_CHARS[bytes[i] % CODE_CHARS.length];
+  }
+
+  return code;
+}
+
+/**
+ * Wires up all Game events to Socket.IO broadcasts for a room.
+ *
+ * @param {Object} io - Socket.IO server instance.
+ * @param {Game} game - The game instance.
+ * @param {Room} room - The room instance.
+ */
+function wireGameEvents(io, game, room) {
+  game.on('hand-dealt', ({ playerId, hand, round }) => {
+    const player = room.getPlayer(playerId);
+    if (player && player.socketId) {
+      io.to(player.socketId).emit('hand-dealt', { hand, round });
+    }
+  });
+
+  game.on('bidding-start', (data) => {
+    io.to(room.code).emit('bidding-start', data);
+  });
+
+  game.on('bid-placed', (data) => {
+    io.to(room.code).emit('bid-placed', data);
+  });
+
+  game.on('bidding-complete', (data) => {
+    io.to(room.code).emit('bidding-complete', data);
+  });
+
+  game.on('your-turn', ({ playerId, playableCards, ...rest }) => {
+    const player = room.getPlayer(playerId);
+    if (player && player.socketId) {
+      io.to(player.socketId).emit('your-turn', {
+        playerId,
+        playableCards: playableCards || [],
+        ...rest,
+      });
+    }
+
+    // Broadcast whose turn it is to the room (without playable cards)
+    io.to(room.code).emit('turn-changed', {
+      playerId,
+      playerName: rest.playerName,
+      seatIndex: rest.seatIndex,
+      phase: rest.phase,
+    });
+  });
+
+  game.on('card-played', (data) => {
+    io.to(room.code).emit('card-played', data);
+  });
+
+  game.on('hand-updated', ({ playerId, hand }) => {
+    const player = room.getPlayer(playerId);
+    if (player && player.socketId) {
+      io.to(player.socketId).emit('hand-updated', { hand });
+    }
+  });
+
+  game.on('trick-result', (data) => {
+    io.to(room.code).emit('trick-result', data);
+  });
+
+  game.on('round-end', (data) => {
+    io.to(room.code).emit('round-end', data);
+  });
+
+  game.on('game-over', (data) => {
+    io.to(room.code).emit('game-over', data);
+    room.status = 'finished';
+  });
+
+  game.on('turn-timeout', (data) => {
+    io.to(room.code).emit('turn-timeout', data);
+  });
+}
+
+/**
+ * Registers all Socket.IO event handlers for a connection.
+ *
+ * @param {Object} io - Socket.IO server instance.
+ * @param {Object} socket - The connected socket.
+ * @param {Map} rooms - Map<roomCode, Room>.
+ * @param {Map} games - Map<roomCode, Game>.
+ */
+export default function registerHandlers(io, socket, rooms, games) {
+
+  // -------------------------------------------------------------------------
+  // create-room
+  // -------------------------------------------------------------------------
+  socket.on('create-room', ({ playerName }, callback) => {
+    let code;
+    do {
+      code = generateRoomCode();
+    } while (rooms.has(code));
+
+    const playerId = socket.id;
+    const player = new Player(playerId, playerName, socket.id);
+    const room = new Room(code, playerId);
+
+    room.addPlayer(player);
+    rooms.set(code, room);
+
+    socket.join(code);
+    socket.data = { playerId, roomCode: code };
+
+    const response = {
+      roomCode: code,
+      playerId,
+      players: room.players.map((p) => ({
+        id: p.id,
+        name: p.name,
+        seatIndex: p.seatIndex,
+        isReady: p.isReady,
+        isConnected: p.isConnected,
+      })),
+    };
+
+    if (typeof callback === 'function') {
+      callback({ success: true, ...response });
+    }
+    socket.emit('room-created', response);
+  });
+
+  // -------------------------------------------------------------------------
+  // join-room
+  // -------------------------------------------------------------------------
+  socket.on('join-room', ({ roomCode, playerName }, callback) => {
+    const code = roomCode?.toUpperCase();
+    const room = rooms.get(code);
+
+    if (!room) {
+      const error = { success: false, error: 'Room not found' };
+      if (typeof callback === 'function') return callback(error);
+      return socket.emit('error-message', error);
+    }
+
+    if (room.status === 'in-progress') {
+      const error = { success: false, error: 'Game already in progress' };
+      if (typeof callback === 'function') return callback(error);
+      return socket.emit('error-message', error);
+    }
+
+    if (room.isFull()) {
+      const error = { success: false, error: 'Room is full' };
+      if (typeof callback === 'function') return callback(error);
+      return socket.emit('error-message', error);
+    }
+
+    const playerId = socket.id;
+    const player = new Player(playerId, playerName, socket.id);
+
+    room.addPlayer(player);
+    socket.join(code);
+    socket.data = { playerId, roomCode: code };
+
+    const playerList = room.players.map((p) => ({
+      id: p.id,
+      name: p.name,
+      seatIndex: p.seatIndex,
+      isReady: p.isReady,
+      isConnected: p.isConnected,
+    }));
+
+    if (typeof callback === 'function') {
+      callback({ success: true, roomCode: code, playerId, players: playerList });
+    }
+
+    io.to(code).emit('player-joined', {
+      playerId,
+      playerName,
+      players: playerList,
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // player-ready
+  // -------------------------------------------------------------------------
+  socket.on('player-ready', (callback) => {
+    const { playerId, roomCode } = socket.data || {};
+    const room = rooms.get(roomCode);
+
+    if (!room) return;
+
+    const player = room.getPlayer(playerId);
+    if (!player) return;
+
+    player.isReady = !player.isReady;
+
+    io.to(roomCode).emit('player-ready-changed', {
+      playerId,
+      isReady: player.isReady,
+      players: room.players.map((p) => ({
+        id: p.id,
+        name: p.name,
+        seatIndex: p.seatIndex,
+        isReady: p.isReady,
+        isConnected: p.isConnected,
+      })),
+    });
+
+    if (typeof callback === 'function') {
+      callback({ success: true, isReady: player.isReady });
+    }
+
+    // If all 4 players are ready, start the game
+    if (room.allReady()) {
+      room.status = 'in-progress';
+
+      const game = new Game(roomCode, room.players);
+      games.set(roomCode, game);
+      room.game = game;
+
+      wireGameEvents(io, game, room);
+      game.startGame();
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // place-bid
+  // -------------------------------------------------------------------------
+  socket.on('place-bid', ({ bid }, callback) => {
+    const { playerId, roomCode } = socket.data || {};
+    const game = games.get(roomCode);
+
+    if (!game) {
+      const error = { success: false, error: 'No active game' };
+      if (typeof callback === 'function') return callback(error);
+      return socket.emit('error-message', error);
+    }
+
+    try {
+      game.placeBid(playerId, bid);
+      if (typeof callback === 'function') callback({ success: true });
+    } catch (err) {
+      const error = { success: false, error: err.message };
+      if (typeof callback === 'function') return callback(error);
+      socket.emit('error-message', error);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // play-card
+  // -------------------------------------------------------------------------
+  socket.on('play-card', ({ card }, callback) => {
+    const { playerId, roomCode } = socket.data || {};
+    const game = games.get(roomCode);
+
+    if (!game) {
+      const error = { success: false, error: 'No active game' };
+      if (typeof callback === 'function') return callback(error);
+      return socket.emit('error-message', error);
+    }
+
+    try {
+      game.playCard(playerId, card);
+      if (typeof callback === 'function') callback({ success: true });
+    } catch (err) {
+      const error = { success: false, error: err.message };
+      if (typeof callback === 'function') return callback(error);
+      socket.emit('error-message', error);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // next-round
+  // -------------------------------------------------------------------------
+  socket.on('next-round', () => {
+    const { roomCode } = socket.data || {};
+    const game = games.get(roomCode);
+    if (game) {
+      game.triggerNextRound();
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // send-chat
+  // -------------------------------------------------------------------------
+  socket.on('send-chat', ({ message }) => {
+    const { playerId, roomCode } = socket.data || {};
+    const room = rooms.get(roomCode);
+
+    if (!room) return;
+
+    const player = room.getPlayer(playerId);
+    if (!player) return;
+
+    io.to(roomCode).emit('chat-message', {
+      playerId,
+      playerName: player.name,
+      message,
+      timestamp: Date.now(),
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // reconnect-game
+  // -------------------------------------------------------------------------
+  socket.on('reconnect-game', ({ roomCode, playerId }, callback) => {
+    const code = roomCode?.toUpperCase();
+    const room = rooms.get(code);
+
+    if (!room) {
+      const error = { success: false, error: 'Room not found' };
+      if (typeof callback === 'function') return callback(error);
+      return socket.emit('error-message', error);
+    }
+
+    const player = room.getPlayer(playerId);
+    if (!player) {
+      const error = { success: false, error: 'Player not found in room' };
+      if (typeof callback === 'function') return callback(error);
+      return socket.emit('error-message', error);
+    }
+
+    // Re-associate socket
+    player.socketId = socket.id;
+    player.isConnected = true;
+
+    socket.join(code);
+    socket.data = { playerId, roomCode: code };
+
+    const game = games.get(code);
+
+    if (game) {
+      const state = game.getStateForPlayer(playerId);
+
+      if (typeof callback === 'function') {
+        callback({ success: true, state });
+      }
+      socket.emit('state-sync', state);
+    } else {
+      if (typeof callback === 'function') {
+        callback({ success: true, state: null });
+      }
+    }
+
+    io.to(code).emit('player-reconnected', {
+      playerId,
+      playerName: player.name,
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // disconnect
+  // -------------------------------------------------------------------------
+  socket.on('disconnect', () => {
+    const { playerId, roomCode } = socket.data || {};
+
+    if (!roomCode) return;
+
+    const room = rooms.get(roomCode);
+    if (!room) return;
+
+    const player = room.getPlayer(playerId);
+    if (!player) return;
+
+    player.isConnected = false;
+
+    io.to(roomCode).emit('player-disconnected', {
+      playerId,
+      playerName: player.name,
+    });
+
+    // Schedule room cleanup if all players have disconnected
+    const allDisconnected = room.players.every((p) => !p.isConnected);
+
+    if (allDisconnected) {
+      setTimeout(() => {
+        const currentRoom = rooms.get(roomCode);
+        if (currentRoom && currentRoom.players.every((p) => !p.isConnected)) {
+          // Clean up game timers
+          const game = games.get(roomCode);
+          if (game) {
+            game._clearTurnTimer();
+            game.removeAllListeners();
+            games.delete(roomCode);
+          }
+
+          rooms.delete(roomCode);
+        }
+      }, ROOM_CLEANUP_DELAY_MS);
+    }
+  });
+}
