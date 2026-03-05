@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useSocket } from '../../context/SocketContext'
 import { useGame } from '../../context/GameContext'
@@ -18,6 +18,17 @@ export default function PlayerHand() {
   const { state } = useGame()
   const { myHand, myTurn, playableCards, phase } = state
 
+  // Track window width for responsive layout
+  const [windowWidth, setWindowWidth] = useState(
+    typeof window !== 'undefined' ? window.innerWidth : 1280
+  )
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
   const sortedHand = useMemo(() => {
     return [...myHand].sort((a, b) => cardSortValue(a) - cardSortValue(b))
   }, [myHand])
@@ -32,65 +43,95 @@ export default function PlayerHand() {
   }
 
   const cardCount = sortedHand.length
-  // Calculate spread and overlap based on card count
-  // Use smaller values on mobile via window width check
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640
-  const maxSpread = isMobile ? 25 : 40
-  const spreadAngle = Math.min(maxSpread, cardCount * (isMobile ? 1.8 : 3))
-  const overlapPx = isMobile ? (cardCount > 10 ? 48 : cardCount > 8 ? 46 : 44) : (cardCount > 8 ? 52 : 60)
+  const isMobile = windowWidth < 640
+
+  // Dynamic layout: calculate overlap and scale to fit screen
+  const padding = isMobile ? 16 : 32
+  const availableWidth = windowWidth - padding
+  const cardWidthPx = isMobile ? 52 : 80
+
+  // Comfortable step (visible portion per card) for readable cards
+  const comfortableStep = isMobile ? 20 : 30
+  const neededWidth = cardCount <= 1
+    ? cardWidthPx
+    : cardWidthPx + (cardCount - 1) * comfortableStep
+
+  // Scale the hand down if it exceeds available width
+  const handScale = Math.min(1, availableWidth / neededWidth)
+
+  // Spread angle also reduced for large hands
+  const maxSpread = isMobile ? 20 : 35
+  const spreadAngle = cardCount <= 1 ? 0 : Math.min(maxSpread, cardCount * (isMobile ? 1.2 : 2))
+
+  // Negative margin = card width - step
+  const negativeMargin = cardCount <= 1 ? 0 : cardWidthPx - comfortableStep
 
   return (
-    <div className="flex justify-center items-end px-2 sm:px-4 hand-fan" style={{ minHeight: isMobile ? '90px' : '140px', paddingBottom: isMobile ? 'max(12px, env(safe-area-inset-bottom, 12px))' : '12px' }}>
-      <AnimatePresence mode="popLayout">
-        {sortedHand.map((card, index) => {
-          const cardKey = `${card.suit}-${card.rank}`
-          const isPlayable = myTurn && phase === 'PLAYING' && playableSet.has(cardKey)
-          const isNotPlayableOnTurn = myTurn && phase === 'PLAYING' && !playableSet.has(cardKey)
+    <div
+      className="flex justify-center items-end px-2 sm:px-4 hand-fan"
+      style={{
+        minHeight: isMobile ? '90px' : '140px',
+        paddingBottom: isMobile ? 'max(12px, env(safe-area-inset-bottom, 12px))' : '12px',
+      }}
+    >
+      <div
+        className="flex justify-center items-end"
+        style={{
+          transform: handScale < 1 ? `scale(${handScale})` : undefined,
+          transformOrigin: 'bottom center',
+        }}
+      >
+        <AnimatePresence mode="popLayout">
+          {sortedHand.map((card, index) => {
+            const cardKey = `${card.suit}-${card.rank}`
+            const isPlayable = myTurn && phase === 'PLAYING' && playableSet.has(cardKey)
+            const isNotPlayableOnTurn = myTurn && phase === 'PLAYING' && !playableSet.has(cardKey)
 
-          // Fan positioning
-          const mid = (cardCount - 1) / 2
-          const offset = index - mid
-          const angle = (offset / Math.max(cardCount - 1, 1)) * spreadAngle
-          const rawYOffset = Math.abs(offset) * Math.abs(offset) * 1.5
-          const yOffset = isMobile ? Math.min(rawYOffset, 8) : rawYOffset
+            // Fan positioning
+            const mid = (cardCount - 1) / 2
+            const offset = index - mid
+            const angle = (offset / Math.max(cardCount - 1, 1)) * spreadAngle
+            const rawYOffset = Math.abs(offset) * Math.abs(offset) * 1.2
+            const yOffset = isMobile ? Math.min(rawYOffset, 6) : Math.min(rawYOffset, 20)
 
-          return (
-            <motion.div
-              key={cardKey}
-              layout
-              initial={{ opacity: 0, y: 60, scale: 0.6 }}
-              animate={{
-                opacity: isNotPlayableOnTurn ? 0.5 : 1,
-                y: 0,
-                scale: 1,
-                rotate: angle,
-                x: 0,
-              }}
-              exit={{ opacity: 0, y: 60, scale: 0.6, transition: { duration: 0.3 } }}
-              transition={{
-                type: 'spring',
-                stiffness: 250,
-                damping: 22,
-                delay: index * 0.03,
-              }}
-              style={{
-                marginLeft: index === 0 ? 0 : `-${overlapPx - 28}px`,
-                marginBottom: `${-yOffset}px`,
-                zIndex: index,
-                transformOrigin: 'bottom center',
-              }}
-            >
-              <Card
-                suit={card.suit}
-                rank={card.rank}
-                faceUp={true}
-                playable={isPlayable}
-                onClick={() => handlePlayCard(card)}
-              />
-            </motion.div>
-          )
-        })}
-      </AnimatePresence>
+            return (
+              <motion.div
+                key={cardKey}
+                layout
+                initial={{ opacity: 0, y: 60, scale: 0.6 }}
+                animate={{
+                  opacity: isNotPlayableOnTurn ? 0.5 : 1,
+                  y: 0,
+                  scale: 1,
+                  rotate: angle,
+                  x: 0,
+                }}
+                exit={{ opacity: 0, y: 60, scale: 0.6, transition: { duration: 0.3 } }}
+                transition={{
+                  type: 'spring',
+                  stiffness: 250,
+                  damping: 22,
+                  delay: index * 0.03,
+                }}
+                style={{
+                  marginLeft: index === 0 ? 0 : `-${negativeMargin}px`,
+                  marginBottom: `${-yOffset}px`,
+                  zIndex: index,
+                  transformOrigin: 'bottom center',
+                }}
+              >
+                <Card
+                  suit={card.suit}
+                  rank={card.rank}
+                  faceUp={true}
+                  playable={isPlayable}
+                  onClick={() => handlePlayCard(card)}
+                />
+              </motion.div>
+            )
+          })}
+        </AnimatePresence>
+      </div>
     </div>
   )
 }

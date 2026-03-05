@@ -122,6 +122,16 @@ function gameReducer(state, action) {
         bids: action.payload.bids,
       }
 
+    case 'TURN_CHANGED':
+      // Broadcast event – update who the current turn belongs to for ALL players
+      // Only update if it's NOT our own turn (your-turn handles that with playableCards)
+      if (action.payload.playerId === state.playerId) return state
+      return {
+        ...state,
+        currentTurn: action.payload.playerId,
+        myTurn: false,
+      }
+
     case 'YOUR_TURN':
       return {
         ...state,
@@ -290,6 +300,9 @@ export function GameProvider({ children }) {
       },
       'your-turn': (data) => {
         dispatch({ type: 'YOUR_TURN', payload: data })
+      },
+      'turn-changed': (data) => {
+        dispatch({ type: 'TURN_CHANGED', payload: data })
       },
       'card-played': (data) => {
         dispatch({ type: 'CARD_PLAYED', payload: data })
