@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Copy, Check, Crown, MessageCircle, Send } from 'lucide-react'
+import { Copy, Check, Crown, MessageCircle, Send, X } from 'lucide-react'
 import { useSocket } from '../context/SocketContext'
 import { useGame } from '../context/GameContext'
 import toast from 'react-hot-toast'
@@ -74,8 +74,18 @@ export default function LobbyPage() {
     setChatInput('')
   }
 
+  const handleKickPlayer = (targetPlayerId) => {
+    if (!socket) return
+    socket.emit('kick-player', { targetPlayerId }, (response) => {
+      if (response?.error) {
+        toast.error(response.error)
+      }
+    })
+  }
+
   const myPlayer = players.find((p) => p.id === playerId)
   const isReady = myPlayer?.isReady || false
+  const isHost = myPlayer?.seatIndex === 0
 
   const seatSlots = Array.from({ length: maxPlayers }, (_, i) => i)
   const gridClass = { 2: 'grid-cols-2', 3: 'grid-cols-3', 4: 'grid-cols-2', 5: 'grid-cols-3' }[maxPlayers] || 'grid-cols-2'
@@ -179,9 +189,20 @@ export default function LobbyPage() {
                         {player.isReady ? 'Ready' : 'Not Ready'}
                       </span>
 
-                      {idx === 0 && (
-                        <Crown size={14} style={{ color: 'var(--gold)' }} className="opacity-50" />
-                      )}
+                      <div className="flex items-center gap-2">
+                        {idx === 0 && (
+                          <Crown size={14} style={{ color: 'var(--gold)' }} className="opacity-50" />
+                        )}
+                        {isHost && !isSelf && (
+                          <button
+                            onClick={() => handleKickPlayer(player.id)}
+                            className="p-1 rounded-full hover:bg-red-500/20 transition-colors group"
+                            title={`Kick ${player.name}`}
+                          >
+                            <X size={14} className="text-red-400/50 group-hover:text-red-400" />
+                          </button>
+                        )}
+                      </div>
                     </>
                   ) : (
                     <>

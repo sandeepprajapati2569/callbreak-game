@@ -253,6 +253,79 @@ export default function registerHandlers(io, socket, rooms, games) {
   });
 
   // -------------------------------------------------------------------------
+  // kick-player (host only, lobby only)
+  // -------------------------------------------------------------------------
+  socket.on('kick-player', ({ targetPlayerId }, callback) => {
+    const { playerId, roomCode } = socket.data || {};
+    const room = rooms.get(roomCode);
+
+    if (!room) {
+      const error = { success: false, error: 'Room not found' };
+      if (typeof callback === 'function') return callback(error);
+      return;
+    }
+
+    if (room.hostId !== playerId) {
+      const error = { success: false, error: 'Only the host can kick players' };
+      if (typeof callback === 'function') return callback(error);
+      return;
+    }
+
+    if (room.status !== 'waiting') {
+      const error = { success: false, error: 'Cannot kick players during a game' };
+      if (typeof callback === 'function') return callback(error);
+      return;
+    }
+
+    if (targetPlayerId === playerId) {
+      const error = { success: false, error: 'Cannot kick yourself' };
+      if (typeof callback === 'function') return callback(error);
+      return;
+    }
+
+    const targetPlayer = room.getPlayer(targetPlayerId);
+    if (!targetPlayer) {
+      const error = { success: false, error: 'Player not found in room' };
+      if (typeof callback === 'function') return callback(error);
+      return;
+    }
+
+    const targetSocketId = targetPlayer.socketId;
+    const targetName = targetPlayer.name;
+
+    room.removePlayer(targetPlayerId);
+
+    const playerList = room.players.map((p) => ({
+      id: p.id,
+      name: p.name,
+      seatIndex: p.seatIndex,
+      isReady: p.isReady,
+      isConnected: p.isConnected,
+    }));
+
+    // Notify the kicked player
+    io.to(targetSocketId).emit('player-kicked', {
+      reason: 'You were removed from the room by the host',
+    });
+
+    // Remove kicked player from the Socket.IO room
+    const kickedSocket = io.sockets.sockets.get(targetSocketId);
+    if (kickedSocket) {
+      kickedSocket.leave(roomCode);
+      kickedSocket.data = {};
+    }
+
+    // Notify remaining players
+    io.to(roomCode).emit('player-left', {
+      playerId: targetPlayerId,
+      playerName: targetName,
+      players: playerList,
+    });
+
+    if (typeof callback === 'function') callback({ success: true });
+  });
+
+  // -------------------------------------------------------------------------
   // place-bid
   // -------------------------------------------------------------------------
   socket.on('place-bid', ({ bid }, callback) => {

@@ -15,7 +15,7 @@ const PHASES = {
 };
 
 const TOTAL_ROUNDS = 5;
-const TURN_TIMEOUT_MS = 30_000;
+const TURN_TIMEOUT_MS = 60_000;
 const MIN_BID = 1;
 
 export default class Game extends EventEmitter {

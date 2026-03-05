@@ -333,6 +333,12 @@ export function GameProvider({ children }) {
         dispatch({ type: 'PLAYER_RECONNECTED', payload: data })
         toast.success(`${data.playerName || 'A player'} reconnected`)
       },
+      'player-kicked': (data) => {
+        dispatch({ type: 'RESET' })
+        setPlayerId(null)
+        setRoomCode(null)
+        toast.error(data.reason || 'You were kicked from the room')
+      },
       'game-state-sync': (data) => {
         dispatch({ type: 'GAME_STATE_SYNC', payload: data })
       },
