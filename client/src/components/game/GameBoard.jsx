@@ -133,8 +133,8 @@ export default function GameBoard() {
         </div>
       )}
 
-      {/* Player hand - bottom */}
-      <div className="absolute bottom-0 left-0 right-0 z-20">
+      {/* Player hand - bottom with safe area */}
+      <div className="absolute bottom-0 left-0 right-0 z-20" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
         <PlayerHand />
       </div>
     </div>

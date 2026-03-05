@@ -5,6 +5,7 @@ import { Users, LogIn, Sparkles } from 'lucide-react'
 import { useSocket } from '../context/SocketContext'
 import { useGame } from '../context/GameContext'
 import toast from 'react-hot-toast'
+import { APP_NAME, APP_TAGLINE } from '../config/app'
 
 const suitSymbols = [
   { symbol: '\u2660', color: '#1a1a2e', x: '10%', y: '15%', size: '4rem', rotate: -15 },
@@ -140,7 +141,7 @@ export default function LandingPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3, duration: 0.6 }}
           >
-            CALL BREAK
+            {APP_NAME}
           </motion.h1>
 
           <motion.p
@@ -150,7 +151,7 @@ export default function LandingPage() {
             animate={{ opacity: 0.7 }}
             transition={{ delay: 0.5, duration: 0.6 }}
           >
-            The Classic Trick-Taking Card Game
+            {APP_TAGLINE}
           </motion.p>
 
           <motion.div

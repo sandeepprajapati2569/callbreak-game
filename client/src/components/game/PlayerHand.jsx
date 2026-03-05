@@ -35,12 +35,12 @@ export default function PlayerHand() {
   // Calculate spread and overlap based on card count
   // Use smaller values on mobile via window width check
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640
-  const maxSpread = isMobile ? 30 : 40
-  const spreadAngle = Math.min(maxSpread, cardCount * (isMobile ? 2.2 : 3))
-  const overlapPx = isMobile ? (cardCount > 8 ? 44 : 48) : (cardCount > 8 ? 52 : 60)
+  const maxSpread = isMobile ? 25 : 40
+  const spreadAngle = Math.min(maxSpread, cardCount * (isMobile ? 1.8 : 3))
+  const overlapPx = isMobile ? (cardCount > 10 ? 48 : cardCount > 8 ? 46 : 44) : (cardCount > 8 ? 52 : 60)
 
   return (
-    <div className="flex justify-center items-end pb-2 sm:pb-3 px-2 sm:px-4 hand-fan" style={{ minHeight: isMobile ? '100px' : '140px' }}>
+    <div className="flex justify-center items-end px-2 sm:px-4 hand-fan" style={{ minHeight: isMobile ? '90px' : '140px', paddingBottom: isMobile ? 'max(12px, env(safe-area-inset-bottom, 12px))' : '12px' }}>
       <AnimatePresence mode="popLayout">
         {sortedHand.map((card, index) => {
           const cardKey = `${card.suit}-${card.rank}`
@@ -51,7 +51,8 @@ export default function PlayerHand() {
           const mid = (cardCount - 1) / 2
           const offset = index - mid
           const angle = (offset / Math.max(cardCount - 1, 1)) * spreadAngle
-          const yOffset = Math.abs(offset) * Math.abs(offset) * 1.5
+          const rawYOffset = Math.abs(offset) * Math.abs(offset) * 1.5
+          const yOffset = isMobile ? Math.min(rawYOffset, 8) : rawYOffset
 
           return (
             <motion.div
