@@ -308,6 +308,12 @@ export default class Game extends EventEmitter {
     const currentPlayer = this.players[this.currentTurnIndex];
     const currentPlayerId = currentPlayer.id;
 
+    // Broadcast timer start so clients can show countdown animation
+    this.emit('turn-timer-start', {
+      playerId: currentPlayerId,
+      duration: TURN_TIMEOUT_MS,
+    });
+
     this.turnTimer = setTimeout(() => {
       this.emit('turn-timeout', {
         playerId: currentPlayerId,

@@ -1,10 +1,12 @@
 import { useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useGame } from '../../context/GameContext'
+import { useVoiceChat } from '../../hooks/useVoiceChat'
 import PlayerHand from './PlayerHand'
 import PlayerStation from './PlayerStation'
 import TrickArea from './TrickArea'
 import ScoreBoard from './ScoreBoard'
+import VoiceChat from './VoiceChat'
 
 const POSITION_MAPS = {
   2: ['bottom', 'top'],
@@ -26,6 +28,9 @@ const POSITION_STYLES = {
 export default function GameBoard() {
   const { state } = useGame()
   const { players, playerId, currentTurn, currentRound, currentTrick, bids, phase } = state
+
+  const voiceChat = useVoiceChat()
+  const { speakingPeers, isSelfSpeaking } = voiceChat
 
   // Find current player's seat index
   const mySeatIndex = useMemo(() => {
@@ -69,9 +74,10 @@ export default function GameBoard() {
         <span className="text-gold font-bold text-xs sm:text-sm">{(currentTrick || 0) + 1}</span>
       </div>
 
-      {/* ScoreBoard - top right */}
-      <div className="absolute top-2 right-2 sm:top-4 sm:right-4 z-20">
+      {/* ScoreBoard + VoiceChat - top right */}
+      <div className="absolute top-2 right-2 sm:top-4 sm:right-4 z-20 flex flex-col items-end gap-2">
         <ScoreBoard />
+        <VoiceChat voiceChat={voiceChat} />
       </div>
 
       {/* Opponent player stations - rendered dynamically */}
@@ -82,6 +88,7 @@ export default function GameBoard() {
             position={player.position}
             isCurrentTurn={currentTurn === player.id}
             isSelf={false}
+            isSpeaking={speakingPeers.has(player.id)}
           />
         </div>
       ))}
@@ -129,6 +136,7 @@ export default function GameBoard() {
             position="bottom"
             isCurrentTurn={currentTurn === bottomPlayer.id}
             isSelf={true}
+            isSpeaking={isSelfSpeaking}
           />
         </div>
       )}

@@ -101,6 +101,10 @@ function wireGameEvents(io, game, room) {
   game.on('turn-timeout', (data) => {
     io.to(room.code).emit('turn-timeout', data);
   });
+
+  game.on('turn-timer-start', (data) => {
+    io.to(room.code).emit('turn-timer-start', data);
+  });
 }
 
 /**
@@ -448,6 +452,63 @@ export default function registerHandlers(io, socket, rooms, games) {
       playerId,
       playerName: player.name,
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // WebRTC Signaling (voice chat)
+  // -------------------------------------------------------------------------
+  socket.on('webrtc-offer', ({ targetId, offer }) => {
+    const { playerId, roomCode } = socket.data || {};
+    const room = rooms.get(roomCode);
+    if (!room) return;
+    const targetPlayer = room.getPlayer(targetId);
+    if (targetPlayer && targetPlayer.socketId) {
+      io.to(targetPlayer.socketId).emit('webrtc-offer', { fromId: playerId, offer });
+    }
+  });
+
+  socket.on('webrtc-answer', ({ targetId, answer }) => {
+    const { playerId, roomCode } = socket.data || {};
+    const room = rooms.get(roomCode);
+    if (!room) return;
+    const targetPlayer = room.getPlayer(targetId);
+    if (targetPlayer && targetPlayer.socketId) {
+      io.to(targetPlayer.socketId).emit('webrtc-answer', { fromId: playerId, answer });
+    }
+  });
+
+  socket.on('webrtc-ice-candidate', ({ targetId, candidate }) => {
+    const { playerId, roomCode } = socket.data || {};
+    const room = rooms.get(roomCode);
+    if (!room) return;
+    const targetPlayer = room.getPlayer(targetId);
+    if (targetPlayer && targetPlayer.socketId) {
+      io.to(targetPlayer.socketId).emit('webrtc-ice-candidate', { fromId: playerId, candidate });
+    }
+  });
+
+  socket.on('voice-join', () => {
+    const { playerId, roomCode } = socket.data || {};
+    const room = rooms.get(roomCode);
+    if (!room) return;
+    socket.to(roomCode).emit('voice-peer-joined', { peerId: playerId });
+  });
+
+  socket.on('voice-leave', () => {
+    const { playerId, roomCode } = socket.data || {};
+    if (!roomCode) return;
+    socket.to(roomCode).emit('voice-peer-left', { peerId: playerId });
+  });
+
+  socket.on('voice-mute-player', ({ targetId, muted }) => {
+    const { playerId, roomCode } = socket.data || {};
+    const room = rooms.get(roomCode);
+    if (!room || room.hostId !== playerId) return;
+    const targetPlayer = room.getPlayer(targetId);
+    if (targetPlayer && targetPlayer.socketId) {
+      io.to(targetPlayer.socketId).emit('voice-force-mute', { muted });
+    }
+    io.to(roomCode).emit('voice-player-muted', { playerId: targetId, muted });
   });
 
   // -------------------------------------------------------------------------

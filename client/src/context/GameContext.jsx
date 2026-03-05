@@ -23,6 +23,9 @@ const initialState = {
   scores: [],
   totalScores: {},
   trickWinner: null,
+  turnTimerStart: null,
+  turnTimerDuration: 60000,
+  turnTimerPlayerId: null,
   messages: [],
   dealerIndex: 0,
   maxPlayers: 4,
@@ -164,6 +167,14 @@ function gameReducer(state, action) {
       return {
         ...state,
         myHand: action.payload.hand,
+      }
+
+    case 'TURN_TIMER_START':
+      return {
+        ...state,
+        turnTimerStart: Date.now(),
+        turnTimerDuration: action.payload.duration || 60000,
+        turnTimerPlayerId: action.payload.playerId,
       }
 
     case 'TRICK_RESULT':
@@ -309,6 +320,9 @@ export function GameProvider({ children }) {
       },
       'hand-updated': (data) => {
         dispatch({ type: 'HAND_UPDATED', payload: data })
+      },
+      'turn-timer-start': (data) => {
+        dispatch({ type: 'TURN_TIMER_START', payload: data })
       },
       'trick-result': (data) => {
         dispatch({ type: 'TRICK_RESULT', payload: data })
