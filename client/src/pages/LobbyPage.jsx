@@ -4,12 +4,15 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Copy, Check, Crown, MessageCircle, Send, X } from 'lucide-react'
 import { useSocket } from '../context/SocketContext'
 import { useGame } from '../context/GameContext'
+import { useVoiceChatContext } from '../context/VoiceChatContext'
+import VoiceChat from '../components/game/VoiceChat'
 import toast from 'react-hot-toast'
 
 export default function LobbyPage() {
   const navigate = useNavigate()
   const { socket } = useSocket()
   const { state } = useGame()
+  const voiceChat = useVoiceChatContext()
   const [copied, setCopied] = useState(false)
   const [countdown, setCountdown] = useState(null)
   const [chatInput, setChatInput] = useState('')
@@ -264,6 +267,11 @@ export default function LobbyPage() {
               </motion.div>
             )}
           </AnimatePresence>
+
+          {/* Voice chat */}
+          <div className="flex justify-center">
+            <VoiceChat voiceChat={voiceChat} />
+          </div>
 
           {/* Player count */}
           <p className="text-sm opacity-40">

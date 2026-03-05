@@ -297,6 +297,12 @@ export default function registerHandlers(io, socket, rooms, games) {
     const targetSocketId = targetPlayer.socketId;
     const targetName = targetPlayer.name;
 
+    // Clean up voice participation for kicked player
+    if (room.voiceParticipants.has(targetPlayerId)) {
+      room.removeVoiceParticipant(targetPlayerId);
+      io.to(roomCode).emit('voice-peer-left', { peerId: targetPlayerId });
+    }
+
     room.removePlayer(targetPlayerId);
 
     const playerList = room.players.map((p) => ({
@@ -491,12 +497,25 @@ export default function registerHandlers(io, socket, rooms, games) {
     const { playerId, roomCode } = socket.data || {};
     const room = rooms.get(roomCode);
     if (!room) return;
+
+    // Send existing voice participants to the new joiner FIRST
+    const existingPeers = room.getVoiceParticipants();
+    socket.emit('voice-existing-peers', { peerIds: existingPeers });
+
+    // Track this player as a voice participant
+    room.addVoiceParticipant(playerId);
+
+    // Then notify existing voice participants about the new joiner
     socket.to(roomCode).emit('voice-peer-joined', { peerId: playerId });
   });
 
   socket.on('voice-leave', () => {
     const { playerId, roomCode } = socket.data || {};
     if (!roomCode) return;
+    const room = rooms.get(roomCode);
+    if (room) {
+      room.removeVoiceParticipant(playerId);
+    }
     socket.to(roomCode).emit('voice-peer-left', { peerId: playerId });
   });
 
@@ -526,6 +545,12 @@ export default function registerHandlers(io, socket, rooms, games) {
     if (!player) return;
 
     player.isConnected = false;
+
+    // Clean up voice participation
+    if (room.voiceParticipants.has(playerId)) {
+      room.removeVoiceParticipant(playerId);
+      socket.to(roomCode).emit('voice-peer-left', { peerId: playerId });
+    }
 
     io.to(roomCode).emit('player-disconnected', {
       playerId,

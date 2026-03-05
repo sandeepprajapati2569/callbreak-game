@@ -71,6 +71,32 @@ function createSpeakingDetector(stream, onSpeakingChange) {
   }
 }
 
+/**
+ * Helper: remove an audio element from DOM safely.
+ */
+function removeAudioEl(audioEl) {
+  if (audioEl) {
+    audioEl.pause()
+    audioEl.srcObject = null
+    if (audioEl.parentNode) audioEl.parentNode.removeChild(audioEl)
+  }
+}
+
+/**
+ * Helper: flush queued ICE candidates after remote description is set.
+ */
+async function flushIceCandidateQueue(peerData) {
+  if (!peerData || !peerData.iceCandidateQueue) return
+  for (const candidate of peerData.iceCandidateQueue) {
+    try {
+      await peerData.pc.addIceCandidate(new RTCIceCandidate(candidate))
+    } catch (err) {
+      console.warn('[Voice] Failed to add queued ICE candidate:', err)
+    }
+  }
+  peerData.iceCandidateQueue = []
+}
+
 export function useVoiceChat() {
   const { socket, playerId } = useSocket()
 
@@ -90,6 +116,10 @@ export function useVoiceChat() {
   const selfDetectorRef = useRef(null)
 
   const createPeerConnection = useCallback((peerId) => {
+    // Deduplicate: if a connection already exists, return it
+    const existing = peersRef.current.get(peerId)
+    if (existing) return existing.pc
+
     const pc = new RTCPeerConnection(ICE_SERVERS)
 
     if (localStreamRef.current) {
@@ -98,11 +128,20 @@ export function useVoiceChat() {
       })
     }
 
-    const audioEl = new Audio()
+    // Create audio element in DOM for reliable playback
+    const audioEl = document.createElement('audio')
     audioEl.autoplay = true
+    audioEl.playsInline = true
+    audioEl.setAttribute('data-voice-peer', peerId)
+    document.body.appendChild(audioEl)
 
     pc.ontrack = (event) => {
       audioEl.srcObject = event.streams[0]
+
+      // Explicitly play to handle autoplay policy
+      audioEl.play().catch((err) => {
+        console.warn('[Voice] Audio autoplay blocked, will retry:', err)
+      })
 
       const cleanup = createSpeakingDetector(event.streams[0], (speaking) => {
         setSpeakingPeers((prev) => {
@@ -123,7 +162,14 @@ export function useVoiceChat() {
       }
     }
 
-    peersRef.current.set(peerId, { pc, audioEl, cleanupDetector: null })
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === 'failed') {
+        console.warn(`[Voice] ICE connection failed for peer ${peerId}, attempting restart`)
+        pc.restartIce()
+      }
+    }
+
+    peersRef.current.set(peerId, { pc, audioEl, cleanupDetector: null, iceCandidateQueue: [] })
     return pc
   }, [socket])
 
@@ -139,7 +185,7 @@ export function useVoiceChat() {
   }, [socket, createPeerConnection])
 
   const joinVoice = useCallback(async () => {
-    if (!socket) return
+    if (!socket || isInVoiceRef.current) return
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
@@ -153,6 +199,7 @@ export function useVoiceChat() {
       // Detect own speaking
       selfDetectorRef.current = createSpeakingDetector(stream, setIsSelfSpeaking)
 
+      // Tell server we joined voice — server will respond with existing peers
       socket.emit('voice-join')
     } catch (err) {
       console.error('[Voice] Mic access denied:', err)
@@ -162,7 +209,7 @@ export function useVoiceChat() {
   const leaveVoice = useCallback(() => {
     peersRef.current.forEach(({ pc, audioEl, cleanupDetector }) => {
       if (cleanupDetector) cleanupDetector()
-      audioEl.srcObject = null
+      removeAudioEl(audioEl)
       pc.close()
     })
     peersRef.current.clear()
@@ -201,6 +248,16 @@ export function useVoiceChat() {
   useEffect(() => {
     if (!socket) return
 
+    // CRITICAL FIX: Handle list of existing voice peers when we join
+    const handleExistingPeers = async ({ peerIds }) => {
+      if (!isInVoiceRef.current) return
+      for (const peerId of peerIds) {
+        if (peerId === playerId) continue
+        setVoicePeers((prev) => new Set(prev).add(peerId))
+        await sendOffer(peerId)
+      }
+    }
+
     const handlePeerJoined = async ({ peerId }) => {
       if (!isInVoiceRef.current || peerId === playerId) return
       setVoicePeers((prev) => new Set(prev).add(peerId))
@@ -211,7 +268,7 @@ export function useVoiceChat() {
       const peerData = peersRef.current.get(peerId)
       if (peerData) {
         if (peerData.cleanupDetector) peerData.cleanupDetector()
-        peerData.audioEl.srcObject = null
+        removeAudioEl(peerData.audioEl)
         peerData.pc.close()
         peersRef.current.delete(peerId)
       }
@@ -229,10 +286,32 @@ export function useVoiceChat() {
 
     const handleOffer = async ({ fromId, offer }) => {
       if (!isInVoiceRef.current) return
+
+      // Perfect negotiation: handle glare (both sides sent offers)
+      const existingPeer = peersRef.current.get(fromId)
+      if (existingPeer) {
+        // Use playerId comparison as tiebreaker — lower ID is "polite" and yields
+        if (playerId < fromId) {
+          // We are polite: discard our connection, accept theirs
+          if (existingPeer.cleanupDetector) existingPeer.cleanupDetector()
+          removeAudioEl(existingPeer.audioEl)
+          existingPeer.pc.close()
+          peersRef.current.delete(fromId)
+        } else {
+          // We are impolite: ignore their offer, they should accept our answer
+          return
+        }
+      }
+
       setVoicePeers((prev) => new Set(prev).add(fromId))
       const pc = createPeerConnection(fromId)
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(offer))
+
+        // Flush any ICE candidates that arrived before remote description
+        const peerData = peersRef.current.get(fromId)
+        await flushIceCandidateQueue(peerData)
+
         const answer = await pc.createAnswer()
         await pc.setLocalDescription(answer)
         socket.emit('webrtc-answer', { targetId: fromId, answer: pc.localDescription })
@@ -246,6 +325,9 @@ export function useVoiceChat() {
       if (peerData) {
         try {
           await peerData.pc.setRemoteDescription(new RTCSessionDescription(answer))
+
+          // Flush any ICE candidates that arrived before remote description
+          await flushIceCandidateQueue(peerData)
         } catch (err) {
           console.error('[Voice] Failed to set answer:', err)
         }
@@ -254,12 +336,17 @@ export function useVoiceChat() {
 
     const handleIceCandidate = async ({ fromId, candidate }) => {
       const peerData = peersRef.current.get(fromId)
-      if (peerData) {
+      if (!peerData) return
+
+      // Queue ICE candidates if remote description not yet set
+      if (peerData.pc.remoteDescription) {
         try {
           await peerData.pc.addIceCandidate(new RTCIceCandidate(candidate))
         } catch (err) {
-          console.error('[Voice] Failed to add ICE candidate:', err)
+          console.warn('[Voice] Failed to add ICE candidate:', err)
         }
+      } else {
+        peerData.iceCandidateQueue.push(candidate)
       }
     }
 
@@ -283,6 +370,7 @@ export function useVoiceChat() {
       })
     }
 
+    socket.on('voice-existing-peers', handleExistingPeers)
     socket.on('voice-peer-joined', handlePeerJoined)
     socket.on('voice-peer-left', handlePeerLeft)
     socket.on('webrtc-offer', handleOffer)
@@ -292,6 +380,7 @@ export function useVoiceChat() {
     socket.on('voice-player-muted', handlePlayerMuted)
 
     return () => {
+      socket.off('voice-existing-peers', handleExistingPeers)
       socket.off('voice-peer-joined', handlePeerJoined)
       socket.off('voice-peer-left', handlePeerLeft)
       socket.off('webrtc-offer', handleOffer)
@@ -302,12 +391,7 @@ export function useVoiceChat() {
     }
   }, [socket, playerId, sendOffer, createPeerConnection])
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (isInVoiceRef.current) leaveVoice()
-    }
-  }, [leaveVoice])
+  // NOTE: No cleanup-on-unmount here — that's handled by VoiceChatProvider
 
   return {
     isInVoice,

@@ -11,6 +11,19 @@ export default class Room {
     this.players = [];
     this.game = null;
     this.status = 'waiting'; // 'waiting' | 'in-progress' | 'finished'
+    this.voiceParticipants = new Set();
+  }
+
+  addVoiceParticipant(playerId) {
+    this.voiceParticipants.add(playerId);
+  }
+
+  removeVoiceParticipant(playerId) {
+    this.voiceParticipants.delete(playerId);
+  }
+
+  getVoiceParticipants() {
+    return Array.from(this.voiceParticipants);
   }
 
   /**

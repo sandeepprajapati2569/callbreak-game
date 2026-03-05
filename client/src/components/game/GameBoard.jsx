@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useGame } from '../../context/GameContext'
-import { useVoiceChat } from '../../hooks/useVoiceChat'
+import { useVoiceChatContext } from '../../context/VoiceChatContext'
 import PlayerHand from './PlayerHand'
 import PlayerStation from './PlayerStation'
 import TrickArea from './TrickArea'
@@ -29,7 +29,7 @@ export default function GameBoard() {
   const { state } = useGame()
   const { players, playerId, currentTurn, currentRound, currentTrick, bids, phase } = state
 
-  const voiceChat = useVoiceChat()
+  const voiceChat = useVoiceChatContext()
   const { speakingPeers, isSelfSpeaking } = voiceChat
 
   // Find current player's seat index

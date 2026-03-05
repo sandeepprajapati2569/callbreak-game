@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { SocketProvider } from './context/SocketContext'
 import { GameProvider } from './context/GameContext'
+import { VoiceChatProvider } from './context/VoiceChatContext'
 import LandingPage from './pages/LandingPage'
 import LobbyPage from './pages/LobbyPage'
 import GamePage from './pages/GamePage'
@@ -11,11 +12,13 @@ function App() {
     <BrowserRouter>
       <SocketProvider>
         <GameProvider>
-          <Routes>
-            <Route path="/" element={<LandingPage />} />
-            <Route path="/lobby" element={<LobbyPage />} />
-            <Route path="/game" element={<GamePage />} />
-          </Routes>
+          <VoiceChatProvider>
+            <Routes>
+              <Route path="/" element={<LandingPage />} />
+              <Route path="/lobby" element={<LobbyPage />} />
+              <Route path="/game" element={<GamePage />} />
+            </Routes>
+          </VoiceChatProvider>
           <Toaster
             position="top-center"
             toastOptions={{
