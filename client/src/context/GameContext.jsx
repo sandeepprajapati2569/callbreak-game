@@ -30,6 +30,7 @@ const initialState = {
   dealerIndex: 0,
   maxPlayers: 4,
   tricksPerRound: 13,
+  queueStatus: null,
 }
 
 function gameReducer(state, action) {
@@ -52,6 +53,37 @@ function gameReducer(state, action) {
         playerId: action.payload.playerId,
         players: action.payload.players || [],
         maxPlayers: action.payload.maxPlayers || 4,
+      }
+
+    case 'QUEUE_JOINED':
+      return {
+        ...state,
+        phase: 'QUEUING',
+        queueStatus: action.payload,
+      }
+
+    case 'QUEUE_STATUS':
+      return {
+        ...state,
+        queueStatus: action.payload,
+      }
+
+    case 'QUEUE_LEFT':
+      return {
+        ...state,
+        phase: 'LANDING',
+        queueStatus: null,
+      }
+
+    case 'MATCH_FOUND':
+      return {
+        ...state,
+        phase: 'LOBBY',
+        roomCode: action.payload.roomCode,
+        playerId: action.payload.playerId,
+        players: action.payload.players || [],
+        maxPlayers: action.payload.maxPlayers || 4,
+        queueStatus: null,
       }
 
     case 'PLAYER_JOINED':
@@ -352,6 +384,15 @@ export function GameProvider({ children }) {
         setPlayerId(null)
         setRoomCode(null)
         toast.error(data.reason || 'You were kicked from the room')
+      },
+      'queue-status': (data) => {
+        dispatch({ type: 'QUEUE_STATUS', payload: data })
+      },
+      'match-found': (data) => {
+        dispatch({ type: 'MATCH_FOUND', payload: data })
+        setPlayerId(data.playerId)
+        setRoomCode(data.roomCode)
+        toast.success('Match found! Game starting...')
       },
       'game-state-sync': (data) => {
         dispatch({ type: 'GAME_STATE_SYNC', payload: data })

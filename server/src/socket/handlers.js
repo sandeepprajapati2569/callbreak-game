@@ -13,6 +13,17 @@ const TRICK_CLEAR_DELAY_MS = 1500;
 // Time before cleaning up an empty room
 const ROOM_CLEANUP_DELAY_MS = 5 * 60 * 1000; // 5 minutes
 
+// ---- Matchmaking queues (module-level, shared across all connections) ----
+// Map<playerCount, Array<{ socketId, playerId, playerName }>>
+const matchmakingQueues = new Map([
+  [2, []],
+  [3, []],
+  [4, []],
+  [5, []],
+]);
+// Reverse lookup: Map<socketId, playerCount> — for disconnect cleanup
+const queuedPlayers = new Map();
+
 /**
  * Generates a random room code using unambiguous characters.
  * @returns {string} A 6-character room code.
@@ -26,6 +37,94 @@ function generateRoomCode() {
   }
 
   return code;
+}
+
+/**
+ * Broadcasts updated queue status to all players in a matchmaking queue.
+ */
+function broadcastQueueStatus(io, maxPlayers) {
+  const queue = matchmakingQueues.get(maxPlayers);
+  if (!queue) return;
+  queue.forEach((entry, idx) => {
+    io.to(entry.socketId).emit('queue-status', {
+      position: idx + 1,
+      total: queue.length,
+      maxPlayers,
+    });
+  });
+}
+
+/**
+ * Attempts to form a match from the queue for a given player count.
+ * If enough players are queued, creates a room and starts the game.
+ */
+function tryMatchQueue(io, maxPlayers, rooms, games) {
+  const queue = matchmakingQueues.get(maxPlayers);
+  if (!queue || queue.length < maxPlayers) return;
+
+  // Pop the first maxPlayers entries
+  const matched = queue.splice(0, maxPlayers);
+
+  // Generate a room
+  let code;
+  do {
+    code = generateRoomCode();
+  } while (rooms.has(code));
+
+  const room = new Room(code, matched[0].socketId, maxPlayers);
+  rooms.set(code, room);
+
+  const playerList = [];
+
+  matched.forEach((entry) => {
+    // Remove from reverse lookup
+    queuedPlayers.delete(entry.socketId);
+
+    // Create player and add to room
+    const player = new Player(entry.socketId, entry.playerName, entry.socketId);
+    player.isReady = true;
+    room.addPlayer(player);
+
+    // Join socket room and set socket data
+    const sock = io.sockets.sockets.get(entry.socketId);
+    if (sock) {
+      sock.join(code);
+      sock.data = { playerId: entry.socketId, roomCode: code };
+    }
+  });
+
+  // Build player list for emission
+  room.players.forEach((p) => {
+    playerList.push({
+      id: p.id,
+      name: p.name,
+      seatIndex: p.seatIndex,
+      isReady: p.isReady,
+      isConnected: p.isConnected,
+    });
+  });
+
+  // Emit match-found to each matched player
+  matched.forEach((entry) => {
+    io.to(entry.socketId).emit('match-found', {
+      roomCode: code,
+      playerId: entry.socketId,
+      maxPlayers: room.maxPlayers,
+      players: playerList,
+    });
+  });
+
+  // Start the game immediately
+  room.status = 'in-progress';
+  const game = new Game(code, room.players);
+  games.set(code, game);
+  room.game = game;
+
+  wireGameEvents(io, game, room);
+  game.startGame();
+
+  // Broadcast updated queue status to remaining players
+  broadcastQueueStatus(io, maxPlayers);
 }
 
 /**
@@ -585,9 +684,75 @@ export default function registerHandlers(io, socket, rooms, games) {
   });
 
   // -------------------------------------------------------------------------
+  // join-queue (matchmaking)
+  // -------------------------------------------------------------------------
+  socket.on('join-queue', ({ playerName, maxPlayers }, callback) => {
+    if (!playerName || typeof playerName !== 'string' || !playerName.trim()) {
+      if (typeof callback === 'function') return callback({ success: false, error: 'Name is required' });
+      return;
+    }
+    const count = Math.min(Math.max(Number(maxPlayers) || 4, 2), 5);
+
+    // Remove from any existing queue first
+    const existingQueue = queuedPlayers.get(socket.id);
+    if (existingQueue !== undefined) {
+      const q = matchmakingQueues.get(existingQueue);
+      if (q) {
+        const idx = q.findIndex((e) => e.socketId === socket.id);
+        if (idx !== -1) q.splice(idx, 1);
+        broadcastQueueStatus(io, existingQueue);
+      }
+      queuedPlayers.delete(socket.id);
+    }
+
+    // Add to queue
+    const queue = matchmakingQueues.get(count);
+    queue.push({ socketId: socket.id, playerId: socket.id, playerName: playerName.trim() });
+    queuedPlayers.set(socket.id, count);
+
+    const position = queue.length;
+    if (typeof callback === 'function') {
+      callback({ success: true, position, total: queue.length, maxPlayers: count });
+    }
+
+    // Broadcast status then try to form a match
+    broadcastQueueStatus(io, count);
+    tryMatchQueue(io, count, rooms, games);
+  });
+
+  // -------------------------------------------------------------------------
+  // leave-queue (matchmaking)
+  // -------------------------------------------------------------------------
+  socket.on('leave-queue', (callback) => {
+    const count = queuedPlayers.get(socket.id);
+    if (count !== undefined) {
+      const q = matchmakingQueues.get(count);
+      if (q) {
+        const idx = q.findIndex((e) => e.socketId === socket.id);
+        if (idx !== -1) q.splice(idx, 1);
+        broadcastQueueStatus(io, count);
+      }
+      queuedPlayers.delete(socket.id);
+    }
+    if (typeof callback === 'function') callback({ success: true });
+  });
+
+  // -------------------------------------------------------------------------
   // disconnect
   // -------------------------------------------------------------------------
   socket.on('disconnect', () => {
+    // Clean up matchmaking queue on disconnect
+    const queueCount = queuedPlayers.get(socket.id);
+    if (queueCount !== undefined) {
+      const q = matchmakingQueues.get(queueCount);
+      if (q) {
+        const idx = q.findIndex((e) => e.socketId === socket.id);
+        if (idx !== -1) q.splice(idx, 1);
+        broadcastQueueStatus(io, queueCount);
+      }
+      queuedPlayers.delete(socket.id);
+    }
+
     const { playerId, roomCode } = socket.data || {};
 
     if (!roomCode) return;

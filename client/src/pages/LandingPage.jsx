@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Users, LogIn, Sparkles } from 'lucide-react'
+import { Users, LogIn, Sparkles, Zap, X, Loader } from 'lucide-react'
 import { useSocket } from '../context/SocketContext'
 import { useGame } from '../context/GameContext'
 import toast from 'react-hot-toast'
@@ -20,12 +20,22 @@ const suitSymbols = [
 export default function LandingPage() {
   const navigate = useNavigate()
   const { socket } = useSocket()
-  const { dispatch } = useGame()
+  const { state, dispatch } = useGame()
   const [playerName, setPlayerName] = useState('')
   const [showJoin, setShowJoin] = useState(false)
   const [roomCode, setRoomCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [maxPlayers, setMaxPlayers] = useState(4)
+
+  const queueing = state.phase === 'QUEUING'
+  const queueStatus = state.queueStatus
+
+  // Navigate to game when match is found and game starts
+  useEffect(() => {
+    if (state.phase === 'BIDDING' || state.phase === 'PLAYING' || state.phase === 'GAME_STARTING') {
+      navigate('/game')
+    }
+  }, [state.phase, navigate])
 
   const handleCreateRoom = () => {
     if (!playerName.trim()) {
@@ -75,6 +85,35 @@ export default function LandingPage() {
         }
       }
     )
+  }
+
+  const handleQuickPlay = () => {
+    if (!playerName.trim()) {
+      toast.error('Please enter your name')
+      return
+    }
+    if (!socket) {
+      toast.error('Connecting to server...')
+      return
+    }
+    dispatch({ type: 'SET_PLAYER_NAME', payload: playerName.trim() })
+    socket.emit('join-queue', { playerName: playerName.trim(), maxPlayers }, (response) => {
+      if (response?.error) {
+        toast.error(response.error)
+      } else {
+        dispatch({
+          type: 'QUEUE_JOINED',
+          payload: { position: response.position, total: response.total, maxPlayers: response.maxPlayers },
+        })
+      }
+    })
+  }
+
+  const handleLeaveQueue = () => {
+    if (!socket) return
+    socket.emit('leave-queue', () => {
+      dispatch({ type: 'QUEUE_LEFT' })
+    })
   }
 
   return (
@@ -215,18 +254,85 @@ export default function LandingPage() {
             ))}
           </div>
 
+          {/* Quick Play button */}
+          <motion.button
+            onClick={handleQuickPlay}
+            disabled={loading || queueing}
+            className="w-full flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-semibold
+              text-black text-lg transition-all duration-300 disabled:opacity-50"
+            style={{
+              background: 'linear-gradient(135deg, var(--gold) 0%, var(--gold-light) 100%)',
+              boxShadow: '0 4px 15px rgba(212, 175, 55, 0.3)',
+            }}
+            whileHover={{ scale: 1.02, boxShadow: '0 6px 20px rgba(212, 175, 55, 0.4)' }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <Zap size={20} />
+            Quick Play
+          </motion.button>
+
+          {/* Queue status overlay */}
+          <AnimatePresence>
+            {queueing && (
+              <motion.div
+                className="w-full rounded-xl p-4 text-center"
+                style={{
+                  background: 'rgba(0, 0, 0, 0.4)',
+                  border: '1px solid rgba(212, 175, 55, 0.3)',
+                }}
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <motion.div
+                  className="flex items-center justify-center gap-2 mb-2"
+                  animate={{ opacity: [0.5, 1, 0.5] }}
+                  transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                >
+                  <Loader size={16} className="animate-spin" style={{ color: 'var(--gold)' }} />
+                  <span className="text-sm font-medium" style={{ color: 'var(--gold)' }}>
+                    Searching for players...
+                  </span>
+                </motion.div>
+                {queueStatus && (
+                  <p className="text-xs opacity-60 mb-3">
+                    {queueStatus.total}/{queueStatus.maxPlayers} players in queue
+                  </p>
+                )}
+                <motion.button
+                  onClick={handleLeaveQueue}
+                  className="flex items-center justify-center gap-1.5 mx-auto px-4 py-1.5 rounded-lg text-sm
+                    text-red-400/80 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <X size={14} />
+                  Cancel
+                </motion.button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Divider */}
+          <div className="flex items-center gap-3 opacity-30">
+            <div className="flex-1 h-px bg-white/30" />
+            <span className="text-xs uppercase tracking-widest">or</span>
+            <div className="flex-1 h-px bg-white/30" />
+          </div>
+
           {/* Buttons */}
           <div className="flex gap-3">
             <motion.button
               onClick={handleCreateRoom}
-              disabled={loading}
+              disabled={loading || queueing}
               className="flex-1 flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-semibold
-                text-black text-lg transition-all duration-300 disabled:opacity-50"
+                text-lg transition-all duration-300 disabled:opacity-50"
               style={{
-                background: 'linear-gradient(135deg, var(--gold) 0%, var(--gold-light) 100%)',
-                boxShadow: '0 4px 15px rgba(212, 175, 55, 0.3)',
+                color: 'var(--gold)',
+                border: '2px solid var(--gold)',
+                background: 'transparent',
               }}
-              whileHover={{ scale: 1.02, boxShadow: '0 6px 20px rgba(212, 175, 55, 0.4)' }}
+              whileHover={{ scale: 1.02, background: 'rgba(212, 175, 55, 0.1)' }}
               whileTap={{ scale: 0.98 }}
             >
               <Sparkles size={20} />
@@ -235,8 +341,9 @@ export default function LandingPage() {
 
             <motion.button
               onClick={() => setShowJoin(!showJoin)}
+              disabled={queueing}
               className="flex-1 flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-semibold
-                text-lg transition-all duration-300"
+                text-lg transition-all duration-300 disabled:opacity-50"
               style={{
                 color: 'var(--gold)',
                 border: '2px solid var(--gold)',
@@ -252,7 +359,7 @@ export default function LandingPage() {
 
           {/* Join room input */}
           <AnimatePresence>
-            {showJoin && (
+            {showJoin && !queueing && (
               <motion.div
                 className="flex gap-3"
                 initial={{ opacity: 0, height: 0 }}
