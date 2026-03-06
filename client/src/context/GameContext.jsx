@@ -6,6 +6,7 @@ const GameContext = createContext(null)
 
 const initialState = {
   phase: 'LANDING',
+  gameType: 'callbreak', // 'callbreak' | 'donkey'
   roomCode: null,
   playerId: null,
   playerName: '',
@@ -31,6 +32,16 @@ const initialState = {
   maxPlayers: 4,
   tricksPerRound: 13,
   queueStatus: null,
+  // Donkey-specific state
+  donkeyPlayers: [],      // players with letters, isSafe, etc.
+  donkeyRound: 0,
+  activePlayers: [],      // IDs of players still passing
+  safeOrder: [],          // order players completed 4-of-a-kind
+  selectedCount: 0,       // how many active players have selected a card
+  totalActive: 0,         // total active players in passing
+  passTimeout: 15000,     // pass timer duration
+  donkeyRoundResult: null, // { loserId, loserName, newLetter, players, round }
+  donkeyGameResult: null,  // { donkeyPlayerId, donkeyPlayerName, players }
 }
 
 function gameReducer(state, action) {
@@ -43,6 +54,7 @@ function gameReducer(state, action) {
         playerId: action.payload.playerId,
         players: action.payload.players || [],
         maxPlayers: action.payload.maxPlayers || 4,
+        gameType: action.payload.gameType || 'callbreak',
       }
 
     case 'ROOM_JOINED':
@@ -53,6 +65,7 @@ function gameReducer(state, action) {
         playerId: action.payload.playerId,
         players: action.payload.players || [],
         maxPlayers: action.payload.maxPlayers || 4,
+        gameType: action.payload.gameType || 'callbreak',
       }
 
     case 'QUEUE_JOINED':
@@ -83,6 +96,7 @@ function gameReducer(state, action) {
         playerId: action.payload.playerId,
         players: action.payload.players || [],
         maxPlayers: action.payload.maxPlayers || 4,
+        gameType: action.payload.gameType || state.gameType,
         queueStatus: null,
       }
 
@@ -241,6 +255,80 @@ function gameReducer(state, action) {
         totalScores: action.payload.totalScores || state.totalScores,
       }
 
+    // ------ Donkey game reducer cases ------
+    case 'DONKEY_HAND_DEALT':
+      return {
+        ...state,
+        phase: 'DONKEY_PASSING',
+        myHand: action.payload.hand,
+        donkeyRound: action.payload.round,
+        donkeyPlayers: action.payload.players || state.donkeyPlayers,
+        selectedCount: 0,
+        totalActive: action.payload.players?.length || state.totalActive,
+        activePlayers: action.payload.players?.map((p) => p.id) || state.activePlayers,
+        safeOrder: [],
+        donkeyRoundResult: null,
+      }
+
+    case 'DONKEY_PASS_START':
+      return {
+        ...state,
+        phase: 'DONKEY_PASSING',
+        activePlayers: action.payload.activePlayers || state.activePlayers,
+        passTimeout: action.payload.timeout || 15000,
+        selectedCount: 0,
+        totalActive: action.payload.activePlayers?.length || state.totalActive,
+      }
+
+    case 'DONKEY_CARD_SELECTED':
+      return {
+        ...state,
+        selectedCount: action.payload.selectedCount,
+        totalActive: action.payload.totalActive,
+      }
+
+    case 'DONKEY_CARDS_PASSED':
+      return {
+        ...state,
+        myHand: action.payload.hand,
+        selectedCount: 0,
+      }
+
+    case 'DONKEY_PLAYER_SAFE':
+      return {
+        ...state,
+        safeOrder: action.payload.safeOrder || state.safeOrder,
+        activePlayers: action.payload.activePlayers || state.activePlayers,
+        donkeyPlayers: state.donkeyPlayers.map((p) =>
+          p.id === action.payload.playerId ? { ...p, isSafe: true } : p
+        ),
+      }
+
+    case 'DONKEY_ROUND_RESULT':
+      return {
+        ...state,
+        phase: 'DONKEY_ROUND_RESULT',
+        donkeyRoundResult: action.payload,
+        donkeyPlayers: action.payload.players?.map((p) => ({
+          ...p,
+          isSafe: false,
+        })) || state.donkeyPlayers,
+      }
+
+    case 'DONKEY_GAME_OVER':
+      return {
+        ...state,
+        phase: 'DONKEY_GAME_OVER',
+        donkeyGameResult: action.payload,
+        donkeyPlayers: action.payload.players || state.donkeyPlayers,
+      }
+
+    case 'SET_GAME_TYPE':
+      return {
+        ...state,
+        gameType: action.payload,
+      }
+
     case 'CHAT_MESSAGE':
       return {
         ...state,
@@ -393,6 +481,31 @@ export function GameProvider({ children }) {
         setPlayerId(data.playerId)
         setRoomCode(data.roomCode)
         toast.success('Match found! Game starting...')
+      },
+      // Donkey game events
+      'donkey-hand-dealt': (data) => {
+        dispatch({ type: 'DONKEY_HAND_DEALT', payload: data })
+      },
+      'donkey-pass-start': (data) => {
+        dispatch({ type: 'DONKEY_PASS_START', payload: data })
+      },
+      'donkey-card-selected': (data) => {
+        dispatch({ type: 'DONKEY_CARD_SELECTED', payload: data })
+      },
+      'donkey-cards-passed': (data) => {
+        dispatch({ type: 'DONKEY_CARDS_PASSED', payload: data })
+      },
+      'donkey-player-safe': (data) => {
+        dispatch({ type: 'DONKEY_PLAYER_SAFE', payload: data })
+        if (data.playerName) {
+          toast.success(`${data.playerName} got 4 of a kind!`)
+        }
+      },
+      'donkey-round-result': (data) => {
+        dispatch({ type: 'DONKEY_ROUND_RESULT', payload: data })
+      },
+      'donkey-game-over': (data) => {
+        dispatch({ type: 'DONKEY_GAME_OVER', payload: data })
       },
       'game-state-sync': (data) => {
         dispatch({ type: 'GAME_STATE_SYNC', payload: data })

@@ -2,6 +2,7 @@ import { randomBytes } from 'crypto';
 import Room from '../models/Room.js';
 import Player from '../models/Player.js';
 import Game from '../game/Game.js';
+import DonkeyGame from '../game/DonkeyGame.js';
 
 // Characters that avoid ambiguity (no 0/O, 1/I/L)
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -14,15 +15,25 @@ const TRICK_CLEAR_DELAY_MS = 1500;
 const ROOM_CLEANUP_DELAY_MS = 5 * 60 * 1000; // 5 minutes
 
 // ---- Matchmaking queues (module-level, shared across all connections) ----
-// Map<playerCount, Array<{ socketId, playerId, playerName }>>
-const matchmakingQueues = new Map([
-  [2, []],
-  [3, []],
-  [4, []],
-  [5, []],
-]);
-// Reverse lookup: Map<socketId, playerCount> — for disconnect cleanup
+// Map<queueKey, Array<{ socketId, playerId, playerName }>>
+// queueKey = `${gameType}-${playerCount}` e.g. "callbreak-4", "donkey-3"
+const matchmakingQueues = new Map();
+// Reverse lookup: Map<socketId, queueKey> — for disconnect cleanup
 const queuedPlayers = new Map();
+
+function getQueueKey(gameType, count) {
+  return `${gameType}-${count}`;
+}
+
+function getQueue(key) {
+  if (!matchmakingQueues.has(key)) matchmakingQueues.set(key, []);
+  return matchmakingQueues.get(key);
+}
+
+function parseQueueKey(key) {
+  const parts = key.split('-');
+  return { gameType: parts[0], count: Number(parts[1]) };
+}
 
 /**
  * Generates a random room code using unambiguous characters.
@@ -42,28 +53,29 @@ function generateRoomCode() {
 /**
  * Broadcasts updated queue status to all players in a matchmaking queue.
  */
-function broadcastQueueStatus(io, maxPlayers) {
-  const queue = matchmakingQueues.get(maxPlayers);
-  if (!queue) return;
+function broadcastQueueStatus(io, queueKey) {
+  const queue = getQueue(queueKey);
+  const { count } = parseQueueKey(queueKey);
   queue.forEach((entry, idx) => {
     io.to(entry.socketId).emit('queue-status', {
       position: idx + 1,
       total: queue.length,
-      maxPlayers,
+      maxPlayers: count,
     });
   });
 }
 
 /**
- * Attempts to form a match from the queue for a given player count.
+ * Attempts to form a match from the queue for a given key.
  * If enough players are queued, creates a room and starts the game.
  */
-function tryMatchQueue(io, maxPlayers, rooms, games) {
-  const queue = matchmakingQueues.get(maxPlayers);
-  if (!queue || queue.length < maxPlayers) return;
+function tryMatchQueue(io, queueKey, rooms, games) {
+  const { gameType, count } = parseQueueKey(queueKey);
+  const queue = getQueue(queueKey);
+  if (queue.length < count) return;
 
-  // Pop the first maxPlayers entries
-  const matched = queue.splice(0, maxPlayers);
+  // Pop the first count entries
+  const matched = queue.splice(0, count);
 
   // Generate a room
   let code;
@@ -71,7 +83,7 @@ function tryMatchQueue(io, maxPlayers, rooms, games) {
     code = generateRoomCode();
   } while (rooms.has(code));
 
-  const room = new Room(code, matched[0].socketId, maxPlayers);
+  const room = new Room(code, matched[0].socketId, count, gameType);
   rooms.set(code, room);
 
   const playerList = [];
@@ -110,21 +122,30 @@ function tryMatchQueue(io, maxPlayers, rooms, games) {
       roomCode: code,
       playerId: entry.socketId,
       maxPlayers: room.maxPlayers,
+      gameType: room.gameType,
       players: playerList,
     });
   });
 
   // Start the game immediately
   room.status = 'in-progress';
-  const game = new Game(code, room.players);
-  games.set(code, game);
-  room.game = game;
 
-  wireGameEvents(io, game, room);
-  game.startGame();
+  if (gameType === 'donkey') {
+    const game = new DonkeyGame(code, room.players);
+    games.set(code, game);
+    room.game = game;
+    wireDonkeyGameEvents(io, game, room);
+    game.startGame();
+  } else {
+    const game = new Game(code, room.players);
+    games.set(code, game);
+    room.game = game;
+    wireGameEvents(io, game, room);
+    game.startGame();
+  }
 
   // Broadcast updated queue status to remaining players
-  broadcastQueueStatus(io, maxPlayers);
+  broadcastQueueStatus(io, queueKey);
 }
 
 /**
@@ -207,6 +228,46 @@ function wireGameEvents(io, game, room) {
 }
 
 /**
+ * Wires up Donkey game events to Socket.IO broadcasts.
+ */
+function wireDonkeyGameEvents(io, game, room) {
+  game.on('donkey-hand-dealt', ({ playerId, hand, round, players }) => {
+    const player = room.getPlayer(playerId);
+    if (player && player.socketId) {
+      io.to(player.socketId).emit('donkey-hand-dealt', { hand, round, players });
+    }
+  });
+
+  game.on('donkey-pass-start', (data) => {
+    io.to(room.code).emit('donkey-pass-start', data);
+  });
+
+  game.on('donkey-card-selected', (data) => {
+    io.to(room.code).emit('donkey-card-selected', data);
+  });
+
+  game.on('donkey-cards-passed', ({ playerId, hand }) => {
+    const player = room.getPlayer(playerId);
+    if (player && player.socketId) {
+      io.to(player.socketId).emit('donkey-cards-passed', { hand });
+    }
+  });
+
+  game.on('donkey-player-safe', (data) => {
+    io.to(room.code).emit('donkey-player-safe', data);
+  });
+
+  game.on('donkey-round-result', (data) => {
+    io.to(room.code).emit('donkey-round-result', data);
+  });
+
+  game.on('donkey-game-over', (data) => {
+    io.to(room.code).emit('donkey-game-over', data);
+    room.status = 'finished';
+  });
+}
+
+/**
  * Registers all Socket.IO event handlers for a connection.
  *
  * @param {Object} io - Socket.IO server instance.
@@ -219,15 +280,16 @@ export default function registerHandlers(io, socket, rooms, games) {
   // -------------------------------------------------------------------------
   // create-room
   // -------------------------------------------------------------------------
-  socket.on('create-room', ({ playerName, maxPlayers }, callback) => {
+  socket.on('create-room', ({ playerName, maxPlayers, gameType }, callback) => {
     let code;
     do {
       code = generateRoomCode();
     } while (rooms.has(code));
 
+    const validGameType = gameType === 'donkey' ? 'donkey' : 'callbreak';
     const playerId = socket.id;
     const player = new Player(playerId, playerName, socket.id);
-    const room = new Room(code, playerId, maxPlayers || 4);
+    const room = new Room(code, playerId, maxPlayers || 4, validGameType);
 
     room.addPlayer(player);
     rooms.set(code, room);
@@ -239,6 +301,7 @@ export default function registerHandlers(io, socket, rooms, games) {
       roomCode: code,
       playerId,
       maxPlayers: room.maxPlayers,
+      gameType: room.gameType,
       players: room.players.map((p) => ({
         id: p.id,
         name: p.name,
@@ -294,7 +357,7 @@ export default function registerHandlers(io, socket, rooms, games) {
       isConnected: p.isConnected,
     }));
 
-    const joinResponse = { roomCode: code, playerId, maxPlayers: room.maxPlayers, players: playerList };
+    const joinResponse = { roomCode: code, playerId, maxPlayers: room.maxPlayers, gameType: room.gameType, players: playerList };
 
     if (typeof callback === 'function') {
       callback({ success: true, ...joinResponse });
@@ -346,12 +409,19 @@ export default function registerHandlers(io, socket, rooms, games) {
     if (room.allReady()) {
       room.status = 'in-progress';
 
-      const game = new Game(roomCode, room.players);
-      games.set(roomCode, game);
-      room.game = game;
-
-      wireGameEvents(io, game, room);
-      game.startGame();
+      if (room.gameType === 'donkey') {
+        const game = new DonkeyGame(roomCode, room.players);
+        games.set(roomCode, game);
+        room.game = game;
+        wireDonkeyGameEvents(io, game, room);
+        game.startGame();
+      } else {
+        const game = new Game(roomCode, room.players);
+        games.set(roomCode, game);
+        room.game = game;
+        wireGameEvents(io, game, room);
+        game.startGame();
+      }
     }
   });
 
@@ -684,31 +754,62 @@ export default function registerHandlers(io, socket, rooms, games) {
   });
 
   // -------------------------------------------------------------------------
+  // donkey-select-card
+  // -------------------------------------------------------------------------
+  socket.on('donkey-select-card', ({ card }, callback) => {
+    const { playerId, roomCode } = socket.data || {};
+    const game = games.get(roomCode);
+
+    if (!game || !(game instanceof DonkeyGame)) {
+      if (typeof callback === 'function') return callback({ success: false, error: 'No active Donkey game' });
+      return;
+    }
+
+    try {
+      game.selectCard(playerId, card);
+      if (typeof callback === 'function') callback({ success: true });
+    } catch (err) {
+      if (typeof callback === 'function') callback({ success: false, error: err.message });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // donkey-next-round
+  // -------------------------------------------------------------------------
+  socket.on('donkey-next-round', () => {
+    const { roomCode } = socket.data || {};
+    const game = games.get(roomCode);
+    if (game && game instanceof DonkeyGame) {
+      game.triggerNextRound();
+    }
+  });
+
+  // -------------------------------------------------------------------------
   // join-queue (matchmaking)
   // -------------------------------------------------------------------------
-  socket.on('join-queue', ({ playerName, maxPlayers }, callback) => {
+  socket.on('join-queue', ({ playerName, maxPlayers, gameType }, callback) => {
     if (!playerName || typeof playerName !== 'string' || !playerName.trim()) {
       if (typeof callback === 'function') return callback({ success: false, error: 'Name is required' });
       return;
     }
     const count = Math.min(Math.max(Number(maxPlayers) || 4, 2), 5);
+    const validGameType = gameType === 'donkey' ? 'donkey' : 'callbreak';
+    const queueKey = getQueueKey(validGameType, count);
 
     // Remove from any existing queue first
-    const existingQueue = queuedPlayers.get(socket.id);
-    if (existingQueue !== undefined) {
-      const q = matchmakingQueues.get(existingQueue);
-      if (q) {
-        const idx = q.findIndex((e) => e.socketId === socket.id);
-        if (idx !== -1) q.splice(idx, 1);
-        broadcastQueueStatus(io, existingQueue);
-      }
+    const existingKey = queuedPlayers.get(socket.id);
+    if (existingKey !== undefined) {
+      const q = getQueue(existingKey);
+      const idx = q.findIndex((e) => e.socketId === socket.id);
+      if (idx !== -1) q.splice(idx, 1);
+      broadcastQueueStatus(io, existingKey);
       queuedPlayers.delete(socket.id);
     }
 
     // Add to queue
-    const queue = matchmakingQueues.get(count);
+    const queue = getQueue(queueKey);
     queue.push({ socketId: socket.id, playerId: socket.id, playerName: playerName.trim() });
-    queuedPlayers.set(socket.id, count);
+    queuedPlayers.set(socket.id, queueKey);
 
     const position = queue.length;
     if (typeof callback === 'function') {
@@ -716,22 +817,20 @@ export default function registerHandlers(io, socket, rooms, games) {
     }
 
     // Broadcast status then try to form a match
-    broadcastQueueStatus(io, count);
-    tryMatchQueue(io, count, rooms, games);
+    broadcastQueueStatus(io, queueKey);
+    tryMatchQueue(io, queueKey, rooms, games);
   });
 
   // -------------------------------------------------------------------------
   // leave-queue (matchmaking)
   // -------------------------------------------------------------------------
   socket.on('leave-queue', (callback) => {
-    const count = queuedPlayers.get(socket.id);
-    if (count !== undefined) {
-      const q = matchmakingQueues.get(count);
-      if (q) {
-        const idx = q.findIndex((e) => e.socketId === socket.id);
-        if (idx !== -1) q.splice(idx, 1);
-        broadcastQueueStatus(io, count);
-      }
+    const queueKey = queuedPlayers.get(socket.id);
+    if (queueKey !== undefined) {
+      const q = getQueue(queueKey);
+      const idx = q.findIndex((e) => e.socketId === socket.id);
+      if (idx !== -1) q.splice(idx, 1);
+      broadcastQueueStatus(io, queueKey);
       queuedPlayers.delete(socket.id);
     }
     if (typeof callback === 'function') callback({ success: true });
@@ -742,14 +841,12 @@ export default function registerHandlers(io, socket, rooms, games) {
   // -------------------------------------------------------------------------
   socket.on('disconnect', () => {
     // Clean up matchmaking queue on disconnect
-    const queueCount = queuedPlayers.get(socket.id);
-    if (queueCount !== undefined) {
-      const q = matchmakingQueues.get(queueCount);
-      if (q) {
-        const idx = q.findIndex((e) => e.socketId === socket.id);
-        if (idx !== -1) q.splice(idx, 1);
-        broadcastQueueStatus(io, queueCount);
-      }
+    const queueKey = queuedPlayers.get(socket.id);
+    if (queueKey !== undefined) {
+      const q = getQueue(queueKey);
+      const idx = q.findIndex((e) => e.socketId === socket.id);
+      if (idx !== -1) q.splice(idx, 1);
+      broadcastQueueStatus(io, queueKey);
       queuedPlayers.delete(socket.id);
     }
 

@@ -6,6 +6,7 @@ import { VoiceChatProvider } from './context/VoiceChatContext'
 import LandingPage from './pages/LandingPage'
 import LobbyPage from './pages/LobbyPage'
 import GamePage from './pages/GamePage'
+import DonkeyGamePage from './pages/DonkeyGamePage'
 
 function App() {
   return (
@@ -17,6 +18,7 @@ function App() {
               <Route path="/" element={<LandingPage />} />
               <Route path="/lobby" element={<LobbyPage />} />
               <Route path="/game" element={<GamePage />} />
+              <Route path="/donkey-game" element={<DonkeyGamePage />} />
             </Routes>
           </VoiceChatProvider>
           <Toaster

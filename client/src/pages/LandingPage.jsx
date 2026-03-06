@@ -26,6 +26,7 @@ export default function LandingPage() {
   const [roomCode, setRoomCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [maxPlayers, setMaxPlayers] = useState(4)
+  const [gameMode, setGameMode] = useState('callbreak') // 'callbreak' | 'donkey'
 
   const queueing = state.phase === 'QUEUING'
   const queueStatus = state.queueStatus
@@ -34,6 +35,9 @@ export default function LandingPage() {
   useEffect(() => {
     if (state.phase === 'BIDDING' || state.phase === 'PLAYING' || state.phase === 'GAME_STARTING') {
       navigate('/game')
+    }
+    if (state.phase === 'DONKEY_PASSING' || state.phase === 'DONKEY_ROUND_RESULT') {
+      navigate('/donkey-game')
     }
   }, [state.phase, navigate])
 
@@ -48,7 +52,8 @@ export default function LandingPage() {
     }
     setLoading(true)
     dispatch({ type: 'SET_PLAYER_NAME', payload: playerName.trim() })
-    socket.emit('create-room', { playerName: playerName.trim(), maxPlayers }, (response) => {
+    dispatch({ type: 'SET_GAME_TYPE', payload: gameMode })
+    socket.emit('create-room', { playerName: playerName.trim(), maxPlayers, gameType: gameMode }, (response) => {
       setLoading(false)
       if (response?.error) {
         toast.error(response.error)
@@ -97,7 +102,8 @@ export default function LandingPage() {
       return
     }
     dispatch({ type: 'SET_PLAYER_NAME', payload: playerName.trim() })
-    socket.emit('join-queue', { playerName: playerName.trim(), maxPlayers }, (response) => {
+    dispatch({ type: 'SET_GAME_TYPE', payload: gameMode })
+    socket.emit('join-queue', { playerName: playerName.trim(), maxPlayers, gameType: gameMode }, (response) => {
       if (response?.error) {
         toast.error(response.error)
       } else {
@@ -203,6 +209,46 @@ export default function LandingPage() {
             <span className="text-3xl opacity-60" style={{ color: 'var(--gold)' }}>{'\u2663'}</span>
           </motion.div>
         </div>
+
+        {/* Game Mode Tabs */}
+        <motion.div
+          className="flex rounded-xl overflow-hidden border border-white/10"
+          style={{ background: 'rgba(0,0,0,0.3)' }}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.55, duration: 0.5 }}
+        >
+          <button
+            onClick={() => setGameMode('callbreak')}
+            className={`flex-1 py-2.5 px-4 text-sm font-semibold tracking-wide transition-all duration-300 ${
+              gameMode === 'callbreak'
+                ? 'text-black'
+                : 'text-white/60 hover:text-white/80'
+            }`}
+            style={
+              gameMode === 'callbreak'
+                ? { background: 'linear-gradient(135deg, var(--gold), var(--gold-light))' }
+                : {}
+            }
+          >
+            ♠ Call Break
+          </button>
+          <button
+            onClick={() => setGameMode('donkey')}
+            className={`flex-1 py-2.5 px-4 text-sm font-semibold tracking-wide transition-all duration-300 ${
+              gameMode === 'donkey'
+                ? 'text-black'
+                : 'text-white/60 hover:text-white/80'
+            }`}
+            style={
+              gameMode === 'donkey'
+                ? { background: 'linear-gradient(135deg, var(--gold), var(--gold-light))' }
+                : {}
+            }
+          >
+            🫏 Donkey
+          </button>
+        </motion.div>
 
         {/* Form */}
         <motion.div
@@ -405,7 +451,9 @@ export default function LandingPage() {
           animate={{ opacity: 0.3 }}
           transition={{ delay: 1, duration: 0.6 }}
         >
-          2-5 Players &middot; 5 Rounds &middot; Spades are Trump
+          {gameMode === 'callbreak'
+            ? '2-5 Players \u00B7 5 Rounds \u00B7 Spades are Trump'
+            : '2-5 Players \u00B7 Get 4 of a Kind \u00B7 Don\'t be the Donkey!'}
         </motion.p>
       </motion.div>
     </div>

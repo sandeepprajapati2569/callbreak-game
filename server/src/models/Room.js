@@ -4,13 +4,14 @@ export default class Room {
    * @param {string} hostId - Player ID of the room creator.
    * @param {number} maxPlayers - Max players for this room (2-5), default 4.
    */
-  constructor(code, hostId, maxPlayers = 4) {
+  constructor(code, hostId, maxPlayers = 4, gameType = 'callbreak') {
     this.code = code;
     this.hostId = hostId;
     this.maxPlayers = Math.min(Math.max(Number(maxPlayers) || 4, 2), 5);
     this.players = [];
     this.game = null;
     this.status = 'waiting'; // 'waiting' | 'in-progress' | 'finished'
+    this.gameType = gameType; // 'callbreak' | 'donkey'
     this.voiceParticipants = new Set();
   }
 

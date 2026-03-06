@@ -33,6 +33,9 @@ export default function LobbyPage() {
     if (state.phase === 'GAME_STARTING' || state.phase === 'BIDDING' || state.phase === 'PLAYING') {
       navigate('/game')
     }
+    if (state.phase === 'DONKEY_PASSING' || state.phase === 'DONKEY_ROUND_RESULT') {
+      navigate('/donkey-game')
+    }
   }, [state.phase, navigate])
 
   // Countdown when all players ready
@@ -119,7 +122,9 @@ export default function LobbyPage() {
         >
           {/* Room Code */}
           <div className="text-center">
-            <p className="text-sm uppercase tracking-widest opacity-50 mb-2">Room Code</p>
+            <p className="text-sm uppercase tracking-widest opacity-50 mb-1">
+              {state.gameType === 'donkey' ? '🫏 Donkey' : '♠ Call Break'} — Room Code
+            </p>
             <div className="flex items-center gap-3">
               <motion.span
                 className="text-2xl sm:text-4xl font-mono font-bold tracking-[0.3em] sm:tracking-[0.4em]"
