@@ -336,6 +336,60 @@ export default function registerHandlers(io, socket, rooms, games) {
   });
 
   // -------------------------------------------------------------------------
+  // leave-room (player voluntarily leaves)
+  // -------------------------------------------------------------------------
+  socket.on('leave-room', () => {
+    const { playerId, roomCode } = socket.data || {};
+    if (!roomCode) return;
+
+    const room = rooms.get(roomCode);
+    if (!room) return;
+
+    const player = room.getPlayer(playerId);
+    if (!player) return;
+
+    const playerName = player.name;
+
+    // Clean up voice participation
+    if (room.voiceParticipants.has(playerId)) {
+      room.removeVoiceParticipant(playerId);
+      socket.to(roomCode).emit('voice-peer-left', { peerId: playerId });
+    }
+
+    room.removePlayer(playerId);
+
+    // Leave the Socket.IO room and clear socket data
+    socket.leave(roomCode);
+    socket.data = {};
+
+    const playerList = room.players.map((p) => ({
+      id: p.id,
+      name: p.name,
+      seatIndex: p.seatIndex,
+      isReady: p.isReady,
+      isConnected: p.isConnected,
+    }));
+
+    // Notify remaining players
+    io.to(roomCode).emit('player-left', {
+      playerId,
+      playerName,
+      players: playerList,
+    });
+
+    // Clean up empty room
+    if (room.players.length === 0) {
+      const game = games.get(roomCode);
+      if (game) {
+        game._clearTurnTimer();
+        game.removeAllListeners();
+        games.delete(roomCode);
+      }
+      rooms.delete(roomCode);
+    }
+  });
+
+  // -------------------------------------------------------------------------
   // place-bid
   // -------------------------------------------------------------------------
   socket.on('place-bid', ({ bid }, callback) => {

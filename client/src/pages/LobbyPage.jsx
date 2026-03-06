@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Copy, Check, Crown, MessageCircle, Send, X } from 'lucide-react'
+import { Copy, Check, Crown, MessageCircle, Send, X, LogOut } from 'lucide-react'
 import { useSocket } from '../context/SocketContext'
 import { useGame } from '../context/GameContext'
 import { useVoiceChatContext } from '../context/VoiceChatContext'
@@ -10,8 +10,8 @@ import toast from 'react-hot-toast'
 
 export default function LobbyPage() {
   const navigate = useNavigate()
-  const { socket } = useSocket()
-  const { state } = useGame()
+  const { socket, setPlayerId, setRoomCode } = useSocket()
+  const { state, dispatch } = useGame()
   const voiceChat = useVoiceChatContext()
   const [copied, setCopied] = useState(false)
   const [countdown, setCountdown] = useState(null)
@@ -84,6 +84,15 @@ export default function LobbyPage() {
         toast.error(response.error)
       }
     })
+  }
+
+  const handleLeaveRoom = () => {
+    if (!socket) return
+    socket.emit('leave-room')
+    dispatch({ type: 'RESET' })
+    setPlayerId(null)
+    setRoomCode(null)
+    navigate('/')
   }
 
   const myPlayer = players.find((p) => p.id === playerId)
@@ -268,15 +277,23 @@ export default function LobbyPage() {
             )}
           </AnimatePresence>
 
-          {/* Voice chat */}
-          <div className="flex justify-center">
+          {/* Player count + Voice mic */}
+          <div className="flex items-center gap-3">
+            <p className="text-sm opacity-40">
+              {players.length}/{maxPlayers} Players
+            </p>
             <VoiceChat voiceChat={voiceChat} />
           </div>
 
-          {/* Player count */}
-          <p className="text-sm opacity-40">
-            {players.length}/{maxPlayers} Players
-          </p>
+          {/* Leave room */}
+          <motion.button
+            onClick={handleLeaveRoom}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm text-red-400/70 hover:text-red-400 hover:bg-red-500/10 transition-all"
+            whileTap={{ scale: 0.95 }}
+          >
+            <LogOut size={14} />
+            <span>Leave Room</span>
+          </motion.button>
         </motion.div>
 
         {/* Chat panel */}

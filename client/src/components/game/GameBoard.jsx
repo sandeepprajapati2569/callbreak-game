@@ -1,6 +1,9 @@
-import { useMemo } from 'react'
+import { useMemo, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
+import { LogOut } from 'lucide-react'
 import { useGame } from '../../context/GameContext'
+import { useSocket } from '../../context/SocketContext'
 import { useVoiceChatContext } from '../../context/VoiceChatContext'
 import PlayerHand from './PlayerHand'
 import PlayerStation from './PlayerStation'
@@ -26,11 +29,22 @@ const POSITION_STYLES = {
 }
 
 export default function GameBoard() {
-  const { state } = useGame()
+  const navigate = useNavigate()
+  const { socket, setPlayerId, setRoomCode } = useSocket()
+  const { state, dispatch } = useGame()
   const { players, playerId, currentTurn, currentRound, currentTrick, bids, phase } = state
 
   const voiceChat = useVoiceChatContext()
   const { speakingPeers, isSelfSpeaking } = voiceChat
+
+  const handleLeaveRoom = useCallback(() => {
+    if (!socket) return
+    socket.emit('leave-room')
+    dispatch({ type: 'RESET' })
+    setPlayerId(null)
+    setRoomCode(null)
+    navigate('/')
+  }, [socket, dispatch, setPlayerId, setRoomCode, navigate])
 
   // Find current player's seat index
   const mySeatIndex = useMemo(() => {
@@ -58,12 +72,25 @@ export default function GameBoard() {
 
   return (
     <div className="w-full h-full felt-bg relative flex items-center justify-center overflow-hidden">
-      {/* Trump indicator - top left */}
-      <div className="absolute top-2 left-2 sm:top-4 sm:left-4 z-20 glass-panel px-2 py-1 sm:px-3 sm:py-2 flex items-center gap-1.5">
-        <span className="text-lg sm:text-2xl" style={{ color: 'var(--gold)' }}>
-          {'\u2660'}
-        </span>
-        <span className="text-[10px] sm:text-xs uppercase tracking-wider opacity-60">Trump</span>
+      {/* Top-left controls: exit, trump, mic */}
+      <div className="absolute top-2 left-2 sm:top-4 sm:left-4 z-20 flex items-center gap-1.5">
+        <motion.button
+          onClick={handleLeaveRoom}
+          className="glass-panel p-1.5 sm:p-2 text-red-400/60 hover:text-red-400 hover:bg-red-500/10 transition-all rounded-lg"
+          whileTap={{ scale: 0.9 }}
+          title="Leave game"
+        >
+          <LogOut size={14} />
+        </motion.button>
+        <div className="glass-panel px-2 py-1 sm:px-3 sm:py-2 flex items-center gap-1.5">
+          <span className="text-lg sm:text-2xl" style={{ color: 'var(--gold)' }}>
+            {'\u2660'}
+          </span>
+          <span className="text-[10px] sm:text-xs uppercase tracking-wider opacity-60">Trump</span>
+        </div>
+        <div className="glass-panel p-1 sm:p-1.5 rounded-lg">
+          <VoiceChat voiceChat={voiceChat} />
+        </div>
       </div>
 
       {/* Round / Trick counter */}
@@ -74,10 +101,9 @@ export default function GameBoard() {
         <span className="text-gold font-bold text-xs sm:text-sm">{(currentTrick || 0) + 1}</span>
       </div>
 
-      {/* ScoreBoard + VoiceChat - top right */}
-      <div className="absolute top-2 right-2 sm:top-4 sm:right-4 z-20 flex flex-col items-end gap-2">
+      {/* ScoreBoard - top right */}
+      <div className="absolute top-2 right-2 sm:top-4 sm:right-4 z-20">
         <ScoreBoard />
-        <VoiceChat voiceChat={voiceChat} />
       </div>
 
       {/* Opponent player stations - rendered dynamically */}
