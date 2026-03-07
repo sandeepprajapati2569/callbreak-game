@@ -33,7 +33,7 @@ export default function LobbyPage() {
     if (state.phase === 'GAME_STARTING' || state.phase === 'BIDDING' || state.phase === 'PLAYING') {
       navigate('/game')
     }
-    if (state.phase === 'DONKEY_PASSING' || state.phase === 'DONKEY_ROUND_RESULT') {
+    if (state.phase === 'DONKEY_PLAYING' || state.phase === 'DONKEY_ROUND_RESULT') {
       navigate('/donkey-game')
     }
   }, [state.phase, navigate])

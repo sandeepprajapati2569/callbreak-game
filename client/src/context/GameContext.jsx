@@ -32,16 +32,20 @@ const initialState = {
   maxPlayers: 4,
   tricksPerRound: 13,
   queueStatus: null,
-  // Donkey-specific state
-  donkeyPlayers: [],      // players with letters, isSafe, etc.
+  // Donkey (Gadha Ladan) specific state
+  donkeyPlayers: [],           // players with letters, isActive, cardCount, seatIndex
   donkeyRound: 0,
-  activePlayers: [],      // IDs of players still passing
-  safeOrder: [],          // order players completed 4-of-a-kind
-  selectedCount: 0,       // how many active players have selected a card
-  totalActive: 0,         // total active players in passing
-  passTimeout: 15000,     // pass timer duration
-  donkeyRoundResult: null, // { loserId, loserName, newLetter, players, round }
-  donkeyGameResult: null,  // { donkeyPlayerId, donkeyPlayerName, players }
+  activePlayers: [],           // IDs of players still holding cards
+  currentTurnPlayerId: null,   // whose turn it is to pick
+  isMyTurn: false,
+  rightNeighborId: null,       // who I pick from when it's my turn
+  rightNeighborCardCount: 0,   // how many face-down cards they hold
+  donkeyTurnTimerStart: null,
+  donkeyTurnTimerDuration: 20000,
+  donkeyTurnTimerPlayerId: null,
+  lastDiscardedSet: null,      // { playerId, playerName, rank }
+  donkeyRoundResult: null,     // { loserId, loserName, newLetter, players, round }
+  donkeyGameResult: null,      // { donkeyPlayerId, donkeyPlayerName, players }
 }
 
 function gameReducer(state, action) {
@@ -255,53 +259,94 @@ function gameReducer(state, action) {
         totalScores: action.payload.totalScores || state.totalScores,
       }
 
-    // ------ Donkey game reducer cases ------
+    // ------ Donkey (Gadha Ladan) game reducer cases ------
     case 'DONKEY_HAND_DEALT':
       return {
         ...state,
-        phase: 'DONKEY_PASSING',
+        phase: 'DONKEY_PLAYING',
         myHand: action.payload.hand,
         donkeyRound: action.payload.round,
         donkeyPlayers: action.payload.players || state.donkeyPlayers,
-        selectedCount: 0,
-        totalActive: action.payload.players?.length || state.totalActive,
-        activePlayers: action.payload.players?.map((p) => p.id) || state.activePlayers,
-        safeOrder: [],
+        activePlayers: (action.payload.players || []).map((p) => p.id),
+        currentTurnPlayerId: null,
+        isMyTurn: false,
+        rightNeighborId: null,
+        rightNeighborCardCount: 0,
+        lastDiscardedSet: null,
         donkeyRoundResult: null,
       }
 
-    case 'DONKEY_PASS_START':
+    case 'DONKEY_SET_DISCARDED':
       return {
         ...state,
-        phase: 'DONKEY_PASSING',
-        activePlayers: action.payload.activePlayers || state.activePlayers,
-        passTimeout: action.payload.timeout || 15000,
-        selectedCount: 0,
-        totalActive: action.payload.activePlayers?.length || state.totalActive,
+        lastDiscardedSet: {
+          playerId: action.payload.playerId,
+          playerName: action.payload.playerName,
+          rank: action.payload.rank,
+        },
+        donkeyPlayers: state.donkeyPlayers.map((p) =>
+          p.id === action.payload.playerId
+            ? { ...p, cardCount: action.payload.newCardCount }
+            : p
+        ),
       }
 
-    case 'DONKEY_CARD_SELECTED':
+    case 'DONKEY_YOUR_TURN':
       return {
         ...state,
-        selectedCount: action.payload.selectedCount,
-        totalActive: action.payload.totalActive,
+        currentTurnPlayerId: action.payload.playerId,
+        isMyTurn: true,
+        rightNeighborId: action.payload.rightNeighborId,
+        rightNeighborCardCount: action.payload.rightNeighborCardCount,
       }
 
-    case 'DONKEY_CARDS_PASSED':
+    case 'DONKEY_TURN_CHANGED':
+      if (action.payload.playerId === state.playerId) return state
+      return {
+        ...state,
+        currentTurnPlayerId: action.payload.playerId,
+        isMyTurn: false,
+        rightNeighborId: null,
+        rightNeighborCardCount: 0,
+      }
+
+    case 'DONKEY_CARD_PICKED':
+      return {
+        ...state,
+        donkeyPlayers: state.donkeyPlayers.map((p) => {
+          if (p.id === action.payload.pickerId) return { ...p, cardCount: action.payload.pickerCardCount }
+          if (p.id === action.payload.fromId) return { ...p, cardCount: action.payload.fromCardCount }
+          return p
+        }),
+      }
+
+    case 'DONKEY_HAND_UPDATED':
       return {
         ...state,
         myHand: action.payload.hand,
-        selectedCount: 0,
       }
 
     case 'DONKEY_PLAYER_SAFE':
       return {
         ...state,
-        safeOrder: action.payload.safeOrder || state.safeOrder,
-        activePlayers: action.payload.activePlayers || state.activePlayers,
+        activePlayers: state.activePlayers.filter((id) => id !== action.payload.playerId),
         donkeyPlayers: state.donkeyPlayers.map((p) =>
-          p.id === action.payload.playerId ? { ...p, isSafe: true } : p
+          p.id === action.payload.playerId ? { ...p, isActive: false, cardCount: 0 } : p
         ),
+      }
+
+    case 'DONKEY_TURN_TIMER_START':
+      return {
+        ...state,
+        donkeyTurnTimerStart: Date.now(),
+        donkeyTurnTimerDuration: action.payload.duration || 20000,
+        donkeyTurnTimerPlayerId: action.payload.playerId,
+      }
+
+    case 'DONKEY_PLAYERS_UPDATE':
+      return {
+        ...state,
+        donkeyPlayers: action.payload.players || state.donkeyPlayers,
       }
 
     case 'DONKEY_ROUND_RESULT':
@@ -311,8 +356,10 @@ function gameReducer(state, action) {
         donkeyRoundResult: action.payload,
         donkeyPlayers: action.payload.players?.map((p) => ({
           ...p,
-          isSafe: false,
+          isActive: true,
         })) || state.donkeyPlayers,
+        isMyTurn: false,
+        currentTurnPlayerId: null,
       }
 
     case 'DONKEY_GAME_OVER':
@@ -321,6 +368,8 @@ function gameReducer(state, action) {
         phase: 'DONKEY_GAME_OVER',
         donkeyGameResult: action.payload,
         donkeyPlayers: action.payload.players || state.donkeyPlayers,
+        isMyTurn: false,
+        currentTurnPlayerId: null,
       }
 
     case 'SET_GAME_TYPE':
@@ -482,24 +531,42 @@ export function GameProvider({ children }) {
         setRoomCode(data.roomCode)
         toast.success('Match found! Game starting...')
       },
-      // Donkey game events
+      // Donkey (Gadha Ladan) game events
       'donkey-hand-dealt': (data) => {
         dispatch({ type: 'DONKEY_HAND_DEALT', payload: data })
       },
-      'donkey-pass-start': (data) => {
-        dispatch({ type: 'DONKEY_PASS_START', payload: data })
+      'donkey-set-discarded': (data) => {
+        dispatch({ type: 'DONKEY_SET_DISCARDED', payload: data })
+        if (data.playerName) {
+          toast(`${data.playerName} discarded four ${data.rank}s!`)
+        }
       },
-      'donkey-card-selected': (data) => {
-        dispatch({ type: 'DONKEY_CARD_SELECTED', payload: data })
+      'donkey-your-turn': (data) => {
+        dispatch({ type: 'DONKEY_YOUR_TURN', payload: data })
       },
-      'donkey-cards-passed': (data) => {
-        dispatch({ type: 'DONKEY_CARDS_PASSED', payload: data })
+      'donkey-turn-changed': (data) => {
+        dispatch({ type: 'DONKEY_TURN_CHANGED', payload: data })
+      },
+      'donkey-card-picked': (data) => {
+        dispatch({ type: 'DONKEY_CARD_PICKED', payload: data })
+      },
+      'donkey-picked-card-reveal': (data) => {
+        // Card reveal handled via hand-updated
+      },
+      'donkey-hand-updated': (data) => {
+        dispatch({ type: 'DONKEY_HAND_UPDATED', payload: data })
       },
       'donkey-player-safe': (data) => {
         dispatch({ type: 'DONKEY_PLAYER_SAFE', payload: data })
         if (data.playerName) {
-          toast.success(`${data.playerName} got 4 of a kind!`)
+          toast.success(`${data.playerName} emptied their hand!`)
         }
+      },
+      'donkey-turn-timer-start': (data) => {
+        dispatch({ type: 'DONKEY_TURN_TIMER_START', payload: data })
+      },
+      'donkey-players-update': (data) => {
+        dispatch({ type: 'DONKEY_PLAYERS_UPDATE', payload: data })
       },
       'donkey-round-result': (data) => {
         dispatch({ type: 'DONKEY_ROUND_RESULT', payload: data })
