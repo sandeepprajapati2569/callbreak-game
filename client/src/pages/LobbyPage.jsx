@@ -172,20 +172,31 @@ export default function LobbyPage() {
                   {player ? (
                     <>
                       {/* Avatar */}
-                      <div
-                        className={`w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold ${
-                          player.isReady ? 'text-black' : 'text-white bg-white/10'
-                        }`}
-                        style={
-                          player.isReady
-                            ? {
-                                background: 'linear-gradient(135deg, var(--gold), var(--gold-light))',
-                              }
-                            : {}
-                        }
-                      >
-                        {player.name?.charAt(0).toUpperCase()}
-                      </div>
+                      {player.photoURL ? (
+                        <img
+                          src={player.photoURL}
+                          alt=""
+                          className={`w-12 h-12 rounded-full object-cover ${
+                            player.isReady ? 'ring-2 ring-[var(--gold)]' : ''
+                          }`}
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <div
+                          className={`w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold ${
+                            player.isReady ? 'text-black' : 'text-white bg-white/10'
+                          }`}
+                          style={
+                            player.isReady
+                              ? {
+                                  background: 'linear-gradient(135deg, var(--gold), var(--gold-light))',
+                                }
+                              : {}
+                          }
+                        >
+                          {player.name?.charAt(0).toUpperCase()}
+                        </div>
+                      )}
 
                       {/* Name */}
                       <span className="font-medium text-sm">

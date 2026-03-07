@@ -85,7 +85,7 @@ export default function LandingPage() {
     setLoading(true)
     dispatch({ type: 'SET_PLAYER_NAME', payload: playerName })
     dispatch({ type: 'SET_GAME_TYPE', payload: gameMode })
-    socket.emit('create-room', { playerName, maxPlayers, gameType: gameMode }, (response) => {
+    socket.emit('create-room', { playerName, maxPlayers, gameType: gameMode, photoURL: user?.photoURL || null }, (response) => {
       setLoading(false)
       if (response?.error) {
         toast.error(response.error)
@@ -112,7 +112,7 @@ export default function LandingPage() {
     dispatch({ type: 'SET_PLAYER_NAME', payload: playerName })
     socket.emit(
       'join-room',
-      { playerName, roomCode: roomCode.trim().toUpperCase() },
+      { playerName, roomCode: roomCode.trim().toUpperCase(), photoURL: user?.photoURL || null },
       (response) => {
         setLoading(false)
         if (response?.error) {
@@ -135,7 +135,7 @@ export default function LandingPage() {
     }
     dispatch({ type: 'SET_PLAYER_NAME', payload: playerName })
     dispatch({ type: 'SET_GAME_TYPE', payload: gameMode })
-    socket.emit('join-queue', { playerName, maxPlayers, gameType: gameMode }, (response) => {
+    socket.emit('join-queue', { playerName, maxPlayers, gameType: gameMode, photoURL: user?.photoURL || null }, (response) => {
       if (response?.error) {
         toast.error(response.error)
       } else {

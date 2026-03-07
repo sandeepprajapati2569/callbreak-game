@@ -93,7 +93,7 @@ function tryMatchQueue(io, queueKey, rooms, games) {
     queuedPlayers.delete(entry.socketId);
 
     // Create player and add to room (use persistent playerId from auth)
-    const player = new Player(entry.playerId, entry.playerName, entry.socketId);
+    const player = new Player(entry.playerId, entry.playerName, entry.socketId, entry.photoURL || null);
     player.isReady = true;
     room.addPlayer(player);
 
@@ -113,6 +113,7 @@ function tryMatchQueue(io, queueKey, rooms, games) {
       seatIndex: p.seatIndex,
       isReady: p.isReady,
       isConnected: p.isConnected,
+      photoURL: p.photoURL || null,
     });
   });
 
@@ -207,6 +208,10 @@ function wireGameEvents(io, game, room) {
 
   game.on('trick-result', (data) => {
     io.to(room.code).emit('trick-result', data);
+  });
+
+  game.on('trick-cleared', (data) => {
+    io.to(room.code).emit('trick-cleared', data);
   });
 
   game.on('round-end', (data) => {
@@ -318,7 +323,7 @@ export default function registerHandlers(io, socket, rooms, games) {
   // -------------------------------------------------------------------------
   // create-room
   // -------------------------------------------------------------------------
-  socket.on('create-room', ({ playerName, maxPlayers, gameType }, callback) => {
+  socket.on('create-room', ({ playerName, maxPlayers, gameType, photoURL }, callback) => {
     let code;
     do {
       code = generateRoomCode();
@@ -326,7 +331,7 @@ export default function registerHandlers(io, socket, rooms, games) {
 
     const validGameType = gameType === 'donkey' ? 'donkey' : 'callbreak';
     const playerId = socket.handshake.auth?.playerId || socket.id;
-    const player = new Player(playerId, playerName, socket.id);
+    const player = new Player(playerId, playerName, socket.id, photoURL || null);
     const room = new Room(code, playerId, maxPlayers || 4, validGameType);
 
     room.addPlayer(player);
@@ -346,6 +351,7 @@ export default function registerHandlers(io, socket, rooms, games) {
         seatIndex: p.seatIndex,
         isReady: p.isReady,
         isConnected: p.isConnected,
+        photoURL: p.photoURL || null,
       })),
     };
 
@@ -358,7 +364,7 @@ export default function registerHandlers(io, socket, rooms, games) {
   // -------------------------------------------------------------------------
   // join-room
   // -------------------------------------------------------------------------
-  socket.on('join-room', ({ roomCode, playerName }, callback) => {
+  socket.on('join-room', ({ roomCode, playerName, photoURL }, callback) => {
     const code = roomCode?.toUpperCase();
     const room = rooms.get(code);
 
@@ -381,7 +387,7 @@ export default function registerHandlers(io, socket, rooms, games) {
     }
 
     const playerId = socket.handshake.auth?.playerId || socket.id;
-    const player = new Player(playerId, playerName, socket.id);
+    const player = new Player(playerId, playerName, socket.id, photoURL || null);
 
     room.addPlayer(player);
     socket.join(code);
@@ -393,6 +399,7 @@ export default function registerHandlers(io, socket, rooms, games) {
       seatIndex: p.seatIndex,
       isReady: p.isReady,
       isConnected: p.isConnected,
+      photoURL: p.photoURL || null,
     }));
 
     const joinResponse = { roomCode: code, playerId, maxPlayers: room.maxPlayers, gameType: room.gameType, players: playerList };
@@ -436,6 +443,7 @@ export default function registerHandlers(io, socket, rooms, games) {
         seatIndex: p.seatIndex,
         isReady: p.isReady,
         isConnected: p.isConnected,
+        photoURL: p.photoURL || null,
       })),
     });
 
@@ -518,6 +526,7 @@ export default function registerHandlers(io, socket, rooms, games) {
       seatIndex: p.seatIndex,
       isReady: p.isReady,
       isConnected: p.isConnected,
+      photoURL: p.photoURL || null,
     }));
 
     // Notify the kicked player
@@ -575,6 +584,7 @@ export default function registerHandlers(io, socket, rooms, games) {
       seatIndex: p.seatIndex,
       isReady: p.isReady,
       isConnected: p.isConnected,
+      photoURL: p.photoURL || null,
     }));
 
     // Notify remaining players
@@ -738,7 +748,17 @@ export default function registerHandlers(io, socket, rooms, games) {
       if (typeof callback === 'function') {
         callback({ success: true, state });
       }
-      socket.emit('game-state-sync', state);
+      socket.emit('game-state-sync', { ...state, playerId, gameType: room.gameType });
+
+      // If it's this player's turn, re-send your-turn with playable cards
+      if (state.currentTurnPlayerId === playerId && game.getPlayableCards) {
+        const playableCards = game.getPlayableCards(playerId);
+        socket.emit('your-turn', {
+          playerId,
+          playableCards: playableCards || [],
+          phase: state.phase,
+        });
+      }
     } else {
       if (typeof callback === 'function') {
         callback({ success: true, state: null });
@@ -855,7 +875,7 @@ export default function registerHandlers(io, socket, rooms, games) {
   // -------------------------------------------------------------------------
   // join-queue (matchmaking)
   // -------------------------------------------------------------------------
-  socket.on('join-queue', ({ playerName, maxPlayers, gameType }, callback) => {
+  socket.on('join-queue', ({ playerName, maxPlayers, gameType, photoURL }, callback) => {
     if (!playerName || typeof playerName !== 'string' || !playerName.trim()) {
       if (typeof callback === 'function') return callback({ success: false, error: 'Name is required' });
       return;
@@ -877,7 +897,7 @@ export default function registerHandlers(io, socket, rooms, games) {
     // Add to queue
     const queue = getQueue(queueKey);
     const queuePlayerId = socket.handshake.auth?.playerId || socket.id;
-    queue.push({ socketId: socket.id, playerId: queuePlayerId, playerName: playerName.trim() });
+    queue.push({ socketId: socket.id, playerId: queuePlayerId, playerName: playerName.trim(), photoURL: photoURL || null });
     queuedPlayers.set(socket.id, queueKey);
 
     const position = queue.length;

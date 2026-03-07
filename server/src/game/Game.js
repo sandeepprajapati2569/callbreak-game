@@ -214,6 +214,7 @@ export default class Game extends EventEmitter {
         bid: p.bid,
         tricksWon: p.tricksWon,
         isConnected: p.isConnected,
+        photoURL: p.photoURL || null,
       };
 
       if (p.id === playerId) {

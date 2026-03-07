@@ -4,10 +4,11 @@ export default class Player {
    * @param {string} name - Display name.
    * @param {string} socketId - Current Socket.IO connection ID.
    */
-  constructor(id, name, socketId) {
+  constructor(id, name, socketId, photoURL = null) {
     this.id = id;
     this.name = name;
     this.socketId = socketId;
+    this.photoURL = photoURL;
     this.hand = [];
     this.bid = null;
     this.tricksWon = 0;

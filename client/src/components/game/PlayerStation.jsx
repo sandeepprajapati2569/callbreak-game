@@ -93,18 +93,29 @@ export default function PlayerStation({ player, position, isCurrentTurn, isSelf,
         )}
 
         {/* Avatar */}
-        <div
-          className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-sm sm:text-lg font-bold flex-shrink-0 relative z-[1] ${
-            isCurrentTurn ? 'text-black' : 'bg-white/10 text-white'
-          }`}
-          style={
-            isCurrentTurn
-              ? { background: 'linear-gradient(135deg, var(--gold), var(--gold-light))' }
-              : {}
-          }
-        >
-          {initial}
-        </div>
+        {player.photoURL ? (
+          <img
+            src={player.photoURL}
+            alt=""
+            className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover flex-shrink-0 relative z-[1] ${
+              isCurrentTurn ? 'ring-2 ring-[var(--gold)]' : ''
+            }`}
+            referrerPolicy="no-referrer"
+          />
+        ) : (
+          <div
+            className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-sm sm:text-lg font-bold flex-shrink-0 relative z-[1] ${
+              isCurrentTurn ? 'text-black' : 'bg-white/10 text-white'
+            }`}
+            style={
+              isCurrentTurn
+                ? { background: 'linear-gradient(135deg, var(--gold), var(--gold-light))' }
+                : {}
+            }
+          >
+            {initial}
+          </div>
+        )}
       </div>
 
       {/* Info */}

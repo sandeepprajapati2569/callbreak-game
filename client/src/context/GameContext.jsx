@@ -411,8 +411,12 @@ function gameReducer(state, action) {
       const s = action.payload
       if (!s) return state
 
+      // Use playerId from sync payload (set during reconnection), fall back to current state
+      const syncedPlayerId = s.playerId || state.playerId
+      const syncedGameType = s.gameType || state.gameType
+
       // Find my player data from the server state
-      const myPlayer = s.players?.find((p) => p.id === state.playerId) || null
+      const myPlayer = s.players?.find((p) => p.id === syncedPlayerId) || null
       const myHand = myPlayer?.hand || state.myHand
 
       // Build bids map
@@ -436,6 +440,9 @@ function gameReducer(state, action) {
       return {
         ...state,
         phase,
+        playerId: syncedPlayerId,
+        playerName: myPlayer?.name || state.playerName,
+        gameType: syncedGameType,
         roomCode: s.roomCode || state.roomCode,
         players: s.players?.map((p) => ({
           id: p.id,
@@ -445,6 +452,7 @@ function gameReducer(state, action) {
           tricksWon: p.tricksWon,
           isConnected: p.isConnected,
           cardCount: p.cardCount,
+          photoURL: p.photoURL || null,
         })) || state.players,
         myHand,
         currentRound: s.currentRound ?? state.currentRound,
@@ -452,7 +460,7 @@ function gameReducer(state, action) {
         trickCards,
         ledSuit: s.currentTrick?.ledSuit || null,
         currentTurn: s.currentTurnPlayerId || null,
-        myTurn: s.currentTurnPlayerId === state.playerId,
+        myTurn: s.currentTurnPlayerId === syncedPlayerId,
         bids,
         tricksWon,
         scores: s.scoreHistory || state.scores,
