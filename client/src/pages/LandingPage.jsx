@@ -21,12 +21,19 @@ export default function LandingPage() {
   const navigate = useNavigate()
   const { socket } = useSocket()
   const { state, dispatch } = useGame()
-  const [playerName, setPlayerName] = useState('')
+  const [playerName, setPlayerName] = useState(() => localStorage.getItem('playerName') || '')
   const [showJoin, setShowJoin] = useState(false)
   const [roomCode, setRoomCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [maxPlayers, setMaxPlayers] = useState(4)
   const [gameMode, setGameMode] = useState('callbreak') // 'callbreak' | 'donkey'
+
+  // Persist player name to localStorage
+  useEffect(() => {
+    if (playerName.trim()) {
+      localStorage.setItem('playerName', playerName.trim())
+    }
+  }, [playerName])
 
   const queueing = state.phase === 'QUEUING'
   const queueStatus = state.queueStatus
@@ -210,8 +217,8 @@ export default function LandingPage() {
           </motion.div>
         </div>
 
-        {/* Game Mode Tabs */}
-        <motion.div
+        {/* Game Mode Tabs — Donkey mode hidden for now, uncomment when ready */}
+        {/* <motion.div
           className="flex rounded-xl overflow-hidden border border-white/10"
           style={{ background: 'rgba(0,0,0,0.3)' }}
           initial={{ opacity: 0, y: 10 }}
@@ -248,7 +255,7 @@ export default function LandingPage() {
           >
             🫏 Donkey
           </button>
-        </motion.div>
+        </motion.div> */}
 
         {/* Form */}
         <motion.div
@@ -451,9 +458,7 @@ export default function LandingPage() {
           animate={{ opacity: 0.3 }}
           transition={{ delay: 1, duration: 0.6 }}
         >
-          {gameMode === 'callbreak'
-            ? '2-5 Players \u00B7 5 Rounds \u00B7 Spades are Trump'
-            : '2-5 Players \u00B7 Get 4 of a Kind \u00B7 Don\'t be the Donkey!'}
+          2-5 Players &middot; 5 Rounds &middot; Spades are Trump
         </motion.p>
       </motion.div>
     </div>
