@@ -5,6 +5,7 @@ import { LogOut } from 'lucide-react'
 import { useGame } from '../../context/GameContext'
 import { useSocket } from '../../context/SocketContext'
 import { useVoiceChatContext } from '../../context/VoiceChatContext'
+import { useOrientation } from '../../hooks/useOrientation'
 import PlayerHand from './PlayerHand'
 import PlayerStation from './PlayerStation'
 import TrickArea from './TrickArea'
@@ -28,11 +29,22 @@ const POSITION_STYLES = {
   'bottom-right': 'absolute bottom-28 sm:bottom-32 right-[12%] sm:right-[18%] z-10',
 }
 
+const LANDSCAPE_POSITION_STYLES = {
+  'top': 'absolute top-8 left-1/2 -translate-x-1/2 z-10',
+  'left': 'absolute left-2 top-1/2 -translate-y-1/2 z-10',
+  'right': 'absolute right-2 top-1/2 -translate-y-1/2 z-10',
+  'top-left': 'absolute top-8 left-[12%] z-10',
+  'top-right': 'absolute top-8 right-[12%] z-10',
+  'bottom-left': 'absolute bottom-24 left-[12%] z-10',
+  'bottom-right': 'absolute bottom-24 right-[12%] z-10',
+}
+
 export default function GameBoard() {
   const navigate = useNavigate()
   const { socket, setPlayerId, setRoomCode } = useSocket()
   const { state, dispatch } = useGame()
   const { players, playerId, currentTurn, currentRound, currentTrick, bids, phase } = state
+  const { isLandscapeMobile } = useOrientation()
 
   const voiceChat = useVoiceChatContext()
   const { speakingPeers, isSelfSpeaking } = voiceChat
@@ -108,7 +120,7 @@ export default function GameBoard() {
 
       {/* Opponent player stations - rendered dynamically */}
       {opponents.map((player) => (
-        <div key={player.id} className={POSITION_STYLES[player.position]}>
+        <div key={player.id} className={isLandscapeMobile ? (LANDSCAPE_POSITION_STYLES[player.position] || POSITION_STYLES[player.position]) : POSITION_STYLES[player.position]}>
           <PlayerStation
             player={player}
             position={player.position}
@@ -156,7 +168,7 @@ export default function GameBoard() {
 
       {/* Bottom player station (current user info, above hand) */}
       {bottomPlayer && (
-        <div className="absolute bottom-28 sm:bottom-32 left-1/2 -translate-x-1/2 z-10">
+        <div className={`absolute left-1/2 -translate-x-1/2 z-10 ${isLandscapeMobile ? 'bottom-24' : 'bottom-28 sm:bottom-32'}`}>
           <PlayerStation
             player={bottomPlayer}
             position="bottom"

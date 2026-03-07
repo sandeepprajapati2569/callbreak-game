@@ -22,13 +22,15 @@ export default function LandingPage() {
   const navigate = useNavigate()
   const { socket, activeGame, rejoinGame } = useSocket()
   const { state, dispatch } = useGame()
-  const { user, loading: authLoading, signInWithGoogle, signOut } = useAuth()
+  const { user, loading: authLoading, signInWithGoogle, signInAsGuest, signOut } = useAuth()
   const [showJoin, setShowJoin] = useState(false)
   const [roomCode, setRoomCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [maxPlayers, setMaxPlayers] = useState(4)
   const [gameMode, setGameMode] = useState('callbreak') // 'callbreak' | 'donkey'
   const [signingIn, setSigningIn] = useState(false)
+  const [showGuestInput, setShowGuestInput] = useState(false)
+  const [guestName, setGuestName] = useState('')
 
   // Get player name from auth
   const playerName = user?.displayName || ''
@@ -61,6 +63,12 @@ export default function LandingPage() {
     } finally {
       setSigningIn(false)
     }
+  }
+
+  const handleGuestSignIn = () => {
+    if (!guestName.trim()) return
+    signInAsGuest(guestName.trim())
+    toast.success(`Welcome, ${guestName.trim()}!`)
   }
 
   const handleSignOut = async () => {
@@ -339,30 +347,84 @@ export default function LandingPage() {
               <Loader size={24} className="animate-spin" style={{ color: 'var(--gold)' }} />
             </div>
           ) : !user ? (
-            <motion.button
-              onClick={handleGoogleSignIn}
-              disabled={signingIn}
-              className="w-full flex items-center justify-center gap-3 px-5 py-3.5 rounded-xl font-semibold
-                text-lg transition-all duration-300 disabled:opacity-50"
-              style={{
-                background: 'rgba(255, 255, 255, 0.95)',
-                color: '#333',
-              }}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              {signingIn ? (
-                <Loader size={20} className="animate-spin" />
-              ) : (
-                <svg width="20" height="20" viewBox="0 0 48 48">
-                  <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-                  <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-                  <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-                  <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-                </svg>
-              )}
-              {signingIn ? 'Signing in...' : 'Sign in with Google'}
-            </motion.button>
+            <>
+              <motion.button
+                onClick={handleGoogleSignIn}
+                disabled={signingIn}
+                className="w-full flex items-center justify-center gap-3 px-5 py-3.5 rounded-xl font-semibold
+                  text-lg transition-all duration-300 disabled:opacity-50"
+                style={{
+                  background: 'rgba(255, 255, 255, 0.95)',
+                  color: '#333',
+                }}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                {signingIn ? (
+                  <Loader size={20} className="animate-spin" />
+                ) : (
+                  <svg width="20" height="20" viewBox="0 0 48 48">
+                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+                  </svg>
+                )}
+                {signingIn ? 'Signing in...' : 'Sign in with Google'}
+              </motion.button>
+
+              {/* Guest mode divider + input */}
+              <div className="flex items-center gap-3 opacity-30">
+                <div className="flex-1 h-px bg-white/30" />
+                <span className="text-xs uppercase tracking-widest">or</span>
+                <div className="flex-1 h-px bg-white/30" />
+              </div>
+
+              <AnimatePresence>
+                {showGuestInput ? (
+                  <motion.div
+                    className="flex gap-2"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.3 }}
+                  >
+                    <input
+                      type="text"
+                      placeholder="Your Name"
+                      value={guestName}
+                      onChange={(e) => setGuestName(e.target.value.slice(0, 20))}
+                      maxLength={20}
+                      className="flex-1 px-4 py-3 rounded-xl bg-black/30 text-white placeholder-white/40
+                        outline-none text-base border border-white/10 focus:border-[var(--gold)]
+                        transition-all duration-300"
+                      onKeyDown={(e) => e.key === 'Enter' && guestName.trim() && handleGuestSignIn()}
+                      autoFocus
+                    />
+                    <motion.button
+                      onClick={handleGuestSignIn}
+                      disabled={!guestName.trim()}
+                      className="px-5 py-3 rounded-xl font-semibold text-black disabled:opacity-50"
+                      style={{ background: 'linear-gradient(135deg, var(--gold), var(--gold-light))' }}
+                      whileTap={{ scale: 0.95 }}
+                    >
+                      Play
+                    </motion.button>
+                  </motion.div>
+                ) : (
+                  <motion.button
+                    onClick={() => setShowGuestInput(true)}
+                    className="w-full py-3 rounded-xl font-semibold text-sm tracking-wide
+                      border border-white/20 text-white/70 hover:text-white hover:border-white/40
+                      transition-all duration-300"
+                    whileHover={{ scale: 1.01 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    Play as Guest
+                  </motion.button>
+                )}
+              </AnimatePresence>
+            </>
           ) : (
             <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-white/5 border border-white/10">
               <div className="flex items-center gap-3">
@@ -380,7 +442,7 @@ export default function LandingPage() {
                 )}
                 <div>
                   <p className="text-sm font-semibold text-white">{playerName}</p>
-                  <p className="text-[11px] opacity-40">{user.email}</p>
+                  <p className="text-[11px] opacity-40">{user.isGuest ? 'Guest' : user.email}</p>
                 </div>
               </div>
               <motion.button

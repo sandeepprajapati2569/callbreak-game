@@ -1,7 +1,8 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useSocket } from '../../context/SocketContext'
 import { useGame } from '../../context/GameContext'
+import { useOrientation } from '../../hooks/useOrientation'
 import Card from './Card'
 
 const SUIT_ORDER = { spades: 0, hearts: 1, diamonds: 2, clubs: 3 }
@@ -17,17 +18,7 @@ export default function PlayerHand() {
   const { socket } = useSocket()
   const { state } = useGame()
   const { myHand, myTurn, playableCards, phase } = state
-
-  // Track window width for responsive layout
-  const [windowWidth, setWindowWidth] = useState(
-    typeof window !== 'undefined' ? window.innerWidth : 1280
-  )
-
-  useEffect(() => {
-    const handleResize = () => setWindowWidth(window.innerWidth)
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [])
+  const { width: windowWidth, isMobile, isLandscapeMobile } = useOrientation()
 
   const sortedHand = useMemo(() => {
     return [...myHand].sort((a, b) => cardSortValue(a) - cardSortValue(b))
@@ -43,15 +34,14 @@ export default function PlayerHand() {
   }
 
   const cardCount = sortedHand.length
-  const isMobile = windowWidth < 640
 
   // Dynamic layout: calculate overlap and scale to fit screen
   const padding = isMobile ? 16 : 32
   const availableWidth = windowWidth - padding
-  const cardWidthPx = isMobile ? 62 : 80
+  const cardWidthPx = isMobile ? 62 : isLandscapeMobile ? 70 : 80
 
   // Comfortable step (visible portion per card) for readable cards
-  const comfortableStep = isMobile ? 24 : 30
+  const comfortableStep = isMobile ? 24 : isLandscapeMobile ? 28 : 30
   const neededWidth = cardCount <= 1
     ? cardWidthPx
     : cardWidthPx + (cardCount - 1) * comfortableStep
@@ -60,8 +50,8 @@ export default function PlayerHand() {
   const handScale = Math.max(0.65, Math.min(1, availableWidth / neededWidth))
 
   // Spread angle also reduced for large hands
-  const maxSpread = isMobile ? 20 : 35
-  const spreadAngle = cardCount <= 1 ? 0 : Math.min(maxSpread, cardCount * (isMobile ? 1.2 : 2))
+  const maxSpread = isMobile ? 20 : isLandscapeMobile ? 25 : 35
+  const spreadAngle = cardCount <= 1 ? 0 : Math.min(maxSpread, cardCount * (isMobile ? 1.2 : isLandscapeMobile ? 1.5 : 2))
 
   // Negative margin = card width - step
   const negativeMargin = cardCount <= 1 ? 0 : cardWidthPx - comfortableStep
@@ -73,8 +63,8 @@ export default function PlayerHand() {
     <div
       className={`flex justify-center items-end px-2 sm:px-4 hand-fan ${needsScroll ? 'scrollbar-hide overflow-x-auto' : ''}`}
       style={{
-        minHeight: isMobile ? '110px' : '140px',
-        paddingBottom: isMobile ? 'max(16px, env(safe-area-inset-bottom, 16px))' : '12px',
+        minHeight: isMobile ? '110px' : isLandscapeMobile ? '100px' : '140px',
+        paddingBottom: isMobile ? 'max(16px, env(safe-area-inset-bottom, 16px))' : isLandscapeMobile ? '8px' : '12px',
       }}
     >
       <div
