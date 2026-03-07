@@ -92,8 +92,8 @@ function tryMatchQueue(io, queueKey, rooms, games) {
     // Remove from reverse lookup
     queuedPlayers.delete(entry.socketId);
 
-    // Create player and add to room
-    const player = new Player(entry.socketId, entry.playerName, entry.socketId);
+    // Create player and add to room (use persistent playerId from auth)
+    const player = new Player(entry.playerId, entry.playerName, entry.socketId);
     player.isReady = true;
     room.addPlayer(player);
 
@@ -101,7 +101,7 @@ function tryMatchQueue(io, queueKey, rooms, games) {
     const sock = io.sockets.sockets.get(entry.socketId);
     if (sock) {
       sock.join(code);
-      sock.data = { playerId: entry.socketId, roomCode: code };
+      sock.data = { playerId: entry.playerId, roomCode: code };
     }
   });
 
@@ -120,7 +120,7 @@ function tryMatchQueue(io, queueKey, rooms, games) {
   matched.forEach((entry) => {
     io.to(entry.socketId).emit('match-found', {
       roomCode: code,
-      playerId: entry.socketId,
+      playerId: entry.playerId,
       maxPlayers: room.maxPlayers,
       gameType: room.gameType,
       players: playerList,
@@ -325,7 +325,7 @@ export default function registerHandlers(io, socket, rooms, games) {
     } while (rooms.has(code));
 
     const validGameType = gameType === 'donkey' ? 'donkey' : 'callbreak';
-    const playerId = socket.id;
+    const playerId = socket.handshake.auth?.playerId || socket.id;
     const player = new Player(playerId, playerName, socket.id);
     const room = new Room(code, playerId, maxPlayers || 4, validGameType);
 
@@ -380,7 +380,7 @@ export default function registerHandlers(io, socket, rooms, games) {
       return socket.emit('error-message', error);
     }
 
-    const playerId = socket.id;
+    const playerId = socket.handshake.auth?.playerId || socket.id;
     const player = new Player(playerId, playerName, socket.id);
 
     room.addPlayer(player);
@@ -674,6 +674,36 @@ export default function registerHandlers(io, socket, rooms, games) {
   });
 
   // -------------------------------------------------------------------------
+  // check-active-game (client calls on connect to see if they have a running game)
+  // -------------------------------------------------------------------------
+  socket.on('check-active-game', ({ playerId: reqPlayerId }, callback) => {
+    const pid = reqPlayerId || socket.handshake.auth?.playerId;
+    if (!pid) {
+      if (typeof callback === 'function') return callback({ activeGame: null });
+      return;
+    }
+
+    // Search all rooms for a player with this ID
+    for (const [code, room] of rooms.entries()) {
+      const player = room.getPlayer(pid);
+      if (player && room.status === 'in-progress') {
+        const result = {
+          activeGame: {
+            roomCode: code,
+            gameType: room.gameType,
+            status: room.status,
+          },
+        };
+        if (typeof callback === 'function') return callback(result);
+        socket.emit('active-game-found', result.activeGame);
+        return;
+      }
+    }
+
+    if (typeof callback === 'function') return callback({ activeGame: null });
+  });
+
+  // -------------------------------------------------------------------------
   // reconnect-game
   // -------------------------------------------------------------------------
   socket.on('reconnect-game', ({ roomCode, playerId }, callback) => {
@@ -708,7 +738,7 @@ export default function registerHandlers(io, socket, rooms, games) {
       if (typeof callback === 'function') {
         callback({ success: true, state });
       }
-      socket.emit('state-sync', state);
+      socket.emit('game-state-sync', state);
     } else {
       if (typeof callback === 'function') {
         callback({ success: true, state: null });
@@ -846,7 +876,8 @@ export default function registerHandlers(io, socket, rooms, games) {
 
     // Add to queue
     const queue = getQueue(queueKey);
-    queue.push({ socketId: socket.id, playerId: socket.id, playerName: playerName.trim() });
+    const queuePlayerId = socket.handshake.auth?.playerId || socket.id;
+    queue.push({ socketId: socket.id, playerId: queuePlayerId, playerName: playerName.trim() });
     queuedPlayers.set(socket.id, queueKey);
 
     const position = queue.length;

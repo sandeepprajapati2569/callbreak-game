@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Users, LogIn, Sparkles, Zap, X, Loader } from 'lucide-react'
+import { Users, LogIn, Sparkles, Zap, X, Loader, LogOut as LogOutIcon } from 'lucide-react'
 import { useSocket } from '../context/SocketContext'
 import { useGame } from '../context/GameContext'
+import { useAuth } from '../context/AuthContext'
 import toast from 'react-hot-toast'
 import { APP_NAME, APP_TAGLINE } from '../config/app'
 
@@ -19,28 +20,28 @@ const suitSymbols = [
 
 export default function LandingPage() {
   const navigate = useNavigate()
-  const { socket } = useSocket()
+  const { socket, activeGame, rejoinGame } = useSocket()
   const { state, dispatch } = useGame()
-  const [playerName, setPlayerName] = useState(() => localStorage.getItem('playerName') || '')
+  const { user, loading: authLoading, signInWithGoogle, signOut } = useAuth()
   const [showJoin, setShowJoin] = useState(false)
   const [roomCode, setRoomCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [maxPlayers, setMaxPlayers] = useState(4)
   const [gameMode, setGameMode] = useState('callbreak') // 'callbreak' | 'donkey'
+  const [signingIn, setSigningIn] = useState(false)
 
-  // Persist player name to localStorage
-  useEffect(() => {
-    if (playerName.trim()) {
-      localStorage.setItem('playerName', playerName.trim())
-    }
-  }, [playerName])
+  // Get player name from auth
+  const playerName = user?.displayName || ''
 
   const queueing = state.phase === 'QUEUING'
   const queueStatus = state.queueStatus
 
-  // Navigate to game when match is found and game starts
+  // Navigate based on phase (handles initial load, match found, and rejoin)
   useEffect(() => {
-    if (state.phase === 'BIDDING' || state.phase === 'PLAYING' || state.phase === 'GAME_STARTING') {
+    if (state.phase === 'LOBBY') {
+      navigate('/lobby')
+    }
+    if (state.phase === 'BIDDING' || state.phase === 'PLAYING' || state.phase === 'GAME_STARTING' || state.phase === 'ROUND_END' || state.phase === 'GAME_OVER') {
       navigate('/game')
     }
     if (state.phase === 'DONKEY_PLAYING' || state.phase === 'DONKEY_ROUND_RESULT') {
@@ -48,9 +49,33 @@ export default function LandingPage() {
     }
   }, [state.phase, navigate])
 
+  const handleGoogleSignIn = async () => {
+    setSigningIn(true)
+    try {
+      await signInWithGoogle()
+      toast.success('Signed in successfully!')
+    } catch (error) {
+      if (error.code !== 'auth/popup-closed-by-user') {
+        toast.error('Sign-in failed. Please try again.')
+      }
+    } finally {
+      setSigningIn(false)
+    }
+  }
+
+  const handleSignOut = async () => {
+    try {
+      await signOut()
+      dispatch({ type: 'RESET' })
+      toast('Signed out')
+    } catch {
+      toast.error('Sign-out failed')
+    }
+  }
+
   const handleCreateRoom = () => {
-    if (!playerName.trim()) {
-      toast.error('Please enter your name')
+    if (!user) {
+      toast.error('Please sign in first')
       return
     }
     if (!socket) {
@@ -58,9 +83,9 @@ export default function LandingPage() {
       return
     }
     setLoading(true)
-    dispatch({ type: 'SET_PLAYER_NAME', payload: playerName.trim() })
+    dispatch({ type: 'SET_PLAYER_NAME', payload: playerName })
     dispatch({ type: 'SET_GAME_TYPE', payload: gameMode })
-    socket.emit('create-room', { playerName: playerName.trim(), maxPlayers, gameType: gameMode }, (response) => {
+    socket.emit('create-room', { playerName, maxPlayers, gameType: gameMode }, (response) => {
       setLoading(false)
       if (response?.error) {
         toast.error(response.error)
@@ -71,8 +96,8 @@ export default function LandingPage() {
   }
 
   const handleJoinRoom = () => {
-    if (!playerName.trim()) {
-      toast.error('Please enter your name')
+    if (!user) {
+      toast.error('Please sign in first')
       return
     }
     if (!roomCode.trim() || roomCode.trim().length < 4) {
@@ -84,10 +109,10 @@ export default function LandingPage() {
       return
     }
     setLoading(true)
-    dispatch({ type: 'SET_PLAYER_NAME', payload: playerName.trim() })
+    dispatch({ type: 'SET_PLAYER_NAME', payload: playerName })
     socket.emit(
       'join-room',
-      { playerName: playerName.trim(), roomCode: roomCode.trim().toUpperCase() },
+      { playerName, roomCode: roomCode.trim().toUpperCase() },
       (response) => {
         setLoading(false)
         if (response?.error) {
@@ -100,17 +125,17 @@ export default function LandingPage() {
   }
 
   const handleQuickPlay = () => {
-    if (!playerName.trim()) {
-      toast.error('Please enter your name')
+    if (!user) {
+      toast.error('Please sign in first')
       return
     }
     if (!socket) {
       toast.error('Connecting to server...')
       return
     }
-    dispatch({ type: 'SET_PLAYER_NAME', payload: playerName.trim() })
+    dispatch({ type: 'SET_PLAYER_NAME', payload: playerName })
     dispatch({ type: 'SET_GAME_TYPE', payload: gameMode })
-    socket.emit('join-queue', { playerName: playerName.trim(), maxPlayers, gameType: gameMode }, (response) => {
+    socket.emit('join-queue', { playerName, maxPlayers, gameType: gameMode }, (response) => {
       if (response?.error) {
         toast.error(response.error)
       } else {
@@ -127,6 +152,11 @@ export default function LandingPage() {
     socket.emit('leave-queue', () => {
       dispatch({ type: 'QUEUE_LEFT' })
     })
+  }
+
+  const handleRejoinGame = () => {
+    if (!activeGame?.roomCode) return
+    rejoinGame(activeGame.roomCode)
   }
 
   return (
@@ -217,6 +247,45 @@ export default function LandingPage() {
           </motion.div>
         </div>
 
+        {/* Rejoin Game Banner */}
+        <AnimatePresence>
+          {activeGame && user && (
+            <motion.div
+              className="w-full rounded-xl p-4"
+              style={{
+                background: 'rgba(212, 175, 55, 0.1)',
+                border: '1px solid rgba(212, 175, 55, 0.4)',
+              }}
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.3 }}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--gold)' }}>
+                    Game in Progress
+                  </p>
+                  <p className="text-xs opacity-60 mt-0.5">
+                    Room: {activeGame.roomCode} &middot; {activeGame.gameType === 'donkey' ? 'Donkey' : 'Call Break'}
+                  </p>
+                </div>
+                <motion.button
+                  onClick={handleRejoinGame}
+                  className="px-4 py-2 rounded-lg font-semibold text-sm text-black"
+                  style={{
+                    background: 'linear-gradient(135deg, var(--gold), var(--gold-light))',
+                  }}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  Rejoin
+                </motion.button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Game Mode Tabs — Donkey mode hidden for now, uncomment when ready */}
         {/* <motion.div
           className="flex rounded-xl overflow-hidden border border-white/10"
@@ -257,30 +326,76 @@ export default function LandingPage() {
           </button>
         </motion.div> */}
 
-        {/* Form */}
+        {/* Auth + Form */}
         <motion.div
           className="w-full flex flex-col gap-4"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.6, duration: 0.6 }}
         >
-          {/* Name input */}
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Enter your name"
-              value={playerName}
-              onChange={(e) => setPlayerName(e.target.value)}
-              maxLength={20}
-              className="w-full px-5 py-3.5 rounded-xl bg-black/30 text-white placeholder-white/40
-                outline-none text-lg tracking-wide transition-all duration-300
-                border border-white/10 focus:border-[var(--gold)] focus:shadow-[0_0_20px_rgba(212,175,55,0.15)]"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !showJoin) handleCreateRoom()
-                if (e.key === 'Enter' && showJoin) handleJoinRoom()
+          {/* Google Sign-In or User Profile */}
+          {authLoading ? (
+            <div className="flex items-center justify-center py-4">
+              <Loader size={24} className="animate-spin" style={{ color: 'var(--gold)' }} />
+            </div>
+          ) : !user ? (
+            <motion.button
+              onClick={handleGoogleSignIn}
+              disabled={signingIn}
+              className="w-full flex items-center justify-center gap-3 px-5 py-3.5 rounded-xl font-semibold
+                text-lg transition-all duration-300 disabled:opacity-50"
+              style={{
+                background: 'rgba(255, 255, 255, 0.95)',
+                color: '#333',
               }}
-            />
-          </div>
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              {signingIn ? (
+                <Loader size={20} className="animate-spin" />
+              ) : (
+                <svg width="20" height="20" viewBox="0 0 48 48">
+                  <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                  <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                  <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                  <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+                </svg>
+              )}
+              {signingIn ? 'Signing in...' : 'Sign in with Google'}
+            </motion.button>
+          ) : (
+            <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-white/5 border border-white/10">
+              <div className="flex items-center gap-3">
+                {user.photoURL ? (
+                  <img
+                    src={user.photoURL}
+                    alt=""
+                    className="w-10 h-10 rounded-full border-2 border-[var(--gold)]/40"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-[var(--gold)]/20 flex items-center justify-center text-lg font-bold" style={{ color: 'var(--gold)' }}>
+                    {playerName?.[0]?.toUpperCase() || '?'}
+                  </div>
+                )}
+                <div>
+                  <p className="text-sm font-semibold text-white">{playerName}</p>
+                  <p className="text-[11px] opacity-40">{user.email}</p>
+                </div>
+              </div>
+              <motion.button
+                onClick={handleSignOut}
+                className="p-2 rounded-lg text-white/40 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                whileTap={{ scale: 0.9 }}
+                title="Sign out"
+              >
+                <LogOutIcon size={16} />
+              </motion.button>
+            </div>
+          )}
+
+          {/* Player count selector — only show when signed in */}
+          {user && (<>
 
           {/* Player count selector */}
           <div className="flex items-center justify-center gap-2">
@@ -449,6 +564,8 @@ export default function LandingPage() {
               </motion.div>
             )}
           </AnimatePresence>
+
+          </>)}
         </motion.div>
 
         {/* Footer info */}

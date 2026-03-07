@@ -48,16 +48,16 @@ export default function PlayerHand() {
   // Dynamic layout: calculate overlap and scale to fit screen
   const padding = isMobile ? 16 : 32
   const availableWidth = windowWidth - padding
-  const cardWidthPx = isMobile ? 52 : 80
+  const cardWidthPx = isMobile ? 62 : 80
 
   // Comfortable step (visible portion per card) for readable cards
-  const comfortableStep = isMobile ? 20 : 30
+  const comfortableStep = isMobile ? 24 : 30
   const neededWidth = cardCount <= 1
     ? cardWidthPx
     : cardWidthPx + (cardCount - 1) * comfortableStep
 
-  // Scale the hand down if it exceeds available width
-  const handScale = Math.min(1, availableWidth / neededWidth)
+  // Scale the hand down if it exceeds available width (min 0.65 to keep cards readable)
+  const handScale = Math.max(0.65, Math.min(1, availableWidth / neededWidth))
 
   // Spread angle also reduced for large hands
   const maxSpread = isMobile ? 20 : 35
@@ -66,12 +66,15 @@ export default function PlayerHand() {
   // Negative margin = card width - step
   const negativeMargin = cardCount <= 1 ? 0 : cardWidthPx - comfortableStep
 
+  // If cards overflow even at min scale, enable horizontal scroll
+  const needsScroll = handScale <= 0.65 && neededWidth * 0.65 > availableWidth
+
   return (
     <div
-      className="flex justify-center items-end px-2 sm:px-4 hand-fan"
+      className={`flex justify-center items-end px-2 sm:px-4 hand-fan ${needsScroll ? 'scrollbar-hide overflow-x-auto' : ''}`}
       style={{
-        minHeight: isMobile ? '90px' : '140px',
-        paddingBottom: isMobile ? 'max(12px, env(safe-area-inset-bottom, 12px))' : '12px',
+        minHeight: isMobile ? '110px' : '140px',
+        paddingBottom: isMobile ? 'max(16px, env(safe-area-inset-bottom, 16px))' : '12px',
       }}
     >
       <div
@@ -79,6 +82,7 @@ export default function PlayerHand() {
         style={{
           transform: handScale < 1 ? `scale(${handScale})` : undefined,
           transformOrigin: 'bottom center',
+          minWidth: needsScroll ? `${neededWidth * 0.65}px` : undefined,
         }}
       >
         <AnimatePresence mode="popLayout">

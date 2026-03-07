@@ -478,8 +478,11 @@ export default class Game extends EventEmitter {
       leadPlayerId: winnerId,
     });
 
-    this._emitYourTurn();
-    this._startTurnTimer();
+    // Delay next turn events so clients can finish the trick-cleared exit animation
+    setTimeout(() => {
+      this._emitYourTurn();
+      this._startTurnTimer();
+    }, 400);
   }
 
   /**

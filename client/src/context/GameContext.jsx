@@ -194,6 +194,8 @@ function gameReducer(state, action) {
       }
 
     case 'CARD_PLAYED': {
+      // If this is the first card of a new trick, defensively clear old trick state
+      const isNewTrick = state.trickCards.length === 0
       const newTrickCards = [
         ...state.trickCards,
         {
@@ -204,7 +206,8 @@ function gameReducer(state, action) {
       return {
         ...state,
         trickCards: newTrickCards,
-        ledSuit: state.trickCards.length === 0 ? action.payload.card.suit : state.ledSuit,
+        ledSuit: isNewTrick ? action.payload.card.suit : state.ledSuit,
+        trickWinner: isNewTrick ? null : state.trickWinner,
         currentTurn: action.payload.nextPlayer || null,
         myTurn: action.payload.nextPlayer === state.playerId,
         playableCards: action.payload.nextPlayer === state.playerId
@@ -404,11 +407,61 @@ function gameReducer(state, action) {
         ),
       }
 
-    case 'GAME_STATE_SYNC':
+    case 'GAME_STATE_SYNC': {
+      const s = action.payload
+      if (!s) return state
+
+      // Find my player data from the server state
+      const myPlayer = s.players?.find((p) => p.id === state.playerId) || null
+      const myHand = myPlayer?.hand || state.myHand
+
+      // Build bids map
+      const bids = {}
+      s.players?.forEach((p) => { if (p.bid !== null && p.bid !== undefined) bids[p.id] = p.bid })
+
+      // Build tricksWon map
+      const tricksWon = {}
+      s.players?.forEach((p) => { if (p.tricksWon !== undefined) tricksWon[p.id] = p.tricksWon })
+
+      // Map trick cards
+      const trickCards = s.currentTrick?.cards?.map((c) => ({
+        playerId: c.playerId,
+        card: { suit: c.suit, rank: c.rank, value: c.value },
+      })) || []
+
+      // Map phase from server to client
+      let phase = s.phase
+      if (phase === 'TRICK_END') phase = 'PLAYING'
+
       return {
         ...state,
-        ...action.payload,
+        phase,
+        roomCode: s.roomCode || state.roomCode,
+        players: s.players?.map((p) => ({
+          id: p.id,
+          name: p.name,
+          seatIndex: p.seatIndex,
+          bid: p.bid,
+          tricksWon: p.tricksWon,
+          isConnected: p.isConnected,
+          cardCount: p.cardCount,
+        })) || state.players,
+        myHand,
+        currentRound: s.currentRound ?? state.currentRound,
+        currentTrick: s.currentTrickNumber ?? state.currentTrick,
+        trickCards,
+        ledSuit: s.currentTrick?.ledSuit || null,
+        currentTurn: s.currentTurnPlayerId || null,
+        myTurn: s.currentTurnPlayerId === state.playerId,
+        bids,
+        tricksWon,
+        scores: s.scoreHistory || state.scores,
+        dealerIndex: s.dealerIndex ?? state.dealerIndex,
+        numPlayers: s.numPlayers || state.numPlayers,
+        tricksPerRound: s.tricksPerRound || state.tricksPerRound,
+        maxBid: s.maxBid || state.maxBid,
       }
+    }
 
     case 'SET_PLAYER_NAME':
       return {
