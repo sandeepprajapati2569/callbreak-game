@@ -24,16 +24,17 @@ export default function Card({
   playable = false,
   onClick,
   small = false,
+  medium = false,
   className = '',
 }) {
   const suitSymbol = SUIT_SYMBOLS[suit] || ''
   const suitColor = SUIT_COLORS[suit] || '#1a1a2e'
   const rankLabel = String(rank)
 
-  const width = small ? 'w-10 sm:w-12' : 'w-[62px] sm:w-20'
-  const height = small ? 'h-14 sm:h-16' : 'h-[86px] sm:h-28'
-  const fontSize = small ? 'text-[10px] sm:text-xs' : 'text-xs sm:text-sm'
-  const suitSize = small ? 'text-base sm:text-lg' : 'text-xl sm:text-2xl'
+  const width = small ? 'w-10 sm:w-12' : medium ? 'w-[56px]' : 'w-[62px] sm:w-20'
+  const height = small ? 'h-14 sm:h-16' : medium ? 'h-[78px]' : 'h-[86px] sm:h-28'
+  const fontSize = small ? 'text-[10px] sm:text-xs' : medium ? 'text-[11px]' : 'text-xs sm:text-sm'
+  const suitSize = small ? 'text-base sm:text-lg' : medium ? 'text-lg' : 'text-xl sm:text-2xl'
 
   if (!faceUp) {
     return (
@@ -68,7 +69,7 @@ export default function Card({
         style={{ color: suitColor }}
       >
         <span className="font-bold">{rankLabel}</span>
-        <span className={small ? 'text-xs' : 'text-sm'}>{suitSymbol}</span>
+        <span className={small ? 'text-xs' : medium ? 'text-xs' : 'text-sm'}>{suitSymbol}</span>
       </div>
 
       {/* Center suit */}
@@ -85,7 +86,7 @@ export default function Card({
         style={{ color: suitColor }}
       >
         <span className="font-bold">{rankLabel}</span>
-        <span className={small ? 'text-xs' : 'text-sm'}>{suitSymbol}</span>
+        <span className={small ? 'text-xs' : medium ? 'text-xs' : 'text-sm'}>{suitSymbol}</span>
       </div>
 
       {/* Playable gold ring indicator */}

@@ -38,10 +38,10 @@ export default function PlayerHand() {
   // Dynamic layout: calculate overlap and scale to fit screen
   const padding = isMobile ? 16 : 32
   const availableWidth = windowWidth - padding
-  const cardWidthPx = isMobile ? 62 : isLandscapeMobile ? 70 : 80
+  const cardWidthPx = isMobile ? 62 : isLandscapeMobile ? 56 : 80
 
   // Comfortable step (visible portion per card) for readable cards
-  const comfortableStep = isMobile ? 24 : isLandscapeMobile ? 28 : 30
+  const comfortableStep = isMobile ? 24 : isLandscapeMobile ? 24 : 30
   const neededWidth = cardCount <= 1
     ? cardWidthPx
     : cardWidthPx + (cardCount - 1) * comfortableStep
@@ -63,8 +63,8 @@ export default function PlayerHand() {
     <div
       className={`flex justify-center items-end px-2 sm:px-4 hand-fan ${needsScroll ? 'scrollbar-hide overflow-x-auto' : ''}`}
       style={{
-        minHeight: isMobile ? '110px' : isLandscapeMobile ? '100px' : '140px',
-        paddingBottom: isMobile ? 'max(16px, env(safe-area-inset-bottom, 16px))' : isLandscapeMobile ? '8px' : '12px',
+        minHeight: isMobile ? '110px' : isLandscapeMobile ? '85px' : '140px',
+        paddingBottom: isMobile ? 'max(12px, env(safe-area-inset-bottom, 12px))' : isLandscapeMobile ? '4px' : '12px',
       }}
     >
       <div
@@ -120,6 +120,7 @@ export default function PlayerHand() {
                   faceUp={true}
                   playable={isPlayable}
                   onClick={() => handlePlayCard(card)}
+                  medium={isLandscapeMobile}
                 />
               </motion.div>
             )

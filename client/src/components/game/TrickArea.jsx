@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useGame } from '../../context/GameContext'
+import { useOrientation } from '../../hooks/useOrientation'
 import Card from './Card'
 
 // Offsets for card positions relative to center, based on relative player position
@@ -57,6 +58,7 @@ function getCollectTarget(offset, winnerOffset) {
 export default function TrickArea({ positionedPlayers }) {
   const { state } = useGame()
   const { trickCards, trickWinner } = state
+  const { isMobile, isLandscapeMobile } = useOrientation()
   const [animPhase, setAnimPhase] = useState('idle') // 'idle' | 'glow' | 'collect'
   const [winnerPosition, setWinnerPosition] = useState(null)
   const prevWinnerRef = useRef(null)
@@ -90,7 +92,9 @@ export default function TrickArea({ positionedPlayers }) {
   }, [trickWinner])
 
   return (
-    <div className="relative w-36 h-28 sm:w-48 sm:h-40 flex items-center justify-center">
+    <div className={`relative flex items-center justify-center ${
+      isLandscapeMobile ? 'w-40 h-24' : isMobile ? 'w-36 h-28' : 'w-48 h-40'
+    }`}>
       <AnimatePresence mode="sync">
         {trickCards.map((tc, idx) => {
           const position = playerPositionMap[tc.playerId] || 'bottom'

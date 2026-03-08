@@ -20,23 +20,23 @@ const POSITION_MAPS = {
 }
 
 const POSITION_STYLES = {
-  'top': 'absolute top-10 sm:top-16 left-1/2 -translate-x-1/2 z-10',
-  'left': 'absolute left-1 sm:left-4 top-1/2 -translate-y-1/2 z-10',
-  'right': 'absolute right-1 sm:right-4 top-1/2 -translate-y-1/2 z-10',
-  'top-left': 'absolute top-10 sm:top-16 left-[12%] sm:left-[18%] z-10',
-  'top-right': 'absolute top-10 sm:top-16 right-[12%] sm:right-[18%] z-10',
-  'bottom-left': 'absolute bottom-28 sm:bottom-32 left-[12%] sm:left-[18%] z-10',
-  'bottom-right': 'absolute bottom-28 sm:bottom-32 right-[12%] sm:right-[18%] z-10',
+  'top': 'absolute top-12 sm:top-16 left-1/2 -translate-x-1/2 z-30',
+  'left': 'absolute left-1 sm:left-4 top-[45%] -translate-y-1/2 z-30',
+  'right': 'absolute right-1 sm:right-4 top-[45%] -translate-y-1/2 z-30',
+  'top-left': 'absolute top-12 sm:top-16 left-[12%] sm:left-[18%] z-30',
+  'top-right': 'absolute top-12 sm:top-16 right-[12%] sm:right-[18%] z-30',
+  'bottom-left': 'absolute bottom-28 sm:bottom-32 left-[12%] sm:left-[18%] z-30',
+  'bottom-right': 'absolute bottom-28 sm:bottom-32 right-[12%] sm:right-[18%] z-30',
 }
 
 const LANDSCAPE_POSITION_STYLES = {
-  'top': 'absolute top-8 left-1/2 -translate-x-1/2 z-10',
-  'left': 'absolute left-2 top-1/2 -translate-y-1/2 z-10',
-  'right': 'absolute right-2 top-1/2 -translate-y-1/2 z-10',
-  'top-left': 'absolute top-8 left-[12%] z-10',
-  'top-right': 'absolute top-8 right-[12%] z-10',
-  'bottom-left': 'absolute bottom-24 left-[12%] z-10',
-  'bottom-right': 'absolute bottom-24 right-[12%] z-10',
+  'top': 'absolute top-11 left-1/2 -translate-x-1/2 z-30',
+  'left': 'absolute left-2 top-[42%] -translate-y-1/2 z-30',
+  'right': 'absolute right-2 top-[42%] -translate-y-1/2 z-30',
+  'top-left': 'absolute top-11 left-[12%] z-30',
+  'top-right': 'absolute top-11 right-[12%] z-30',
+  'bottom-left': 'absolute bottom-24 left-[12%] z-30',
+  'bottom-right': 'absolute bottom-24 right-[12%] z-30',
 }
 
 export default function GameBoard() {
@@ -85,7 +85,9 @@ export default function GameBoard() {
   return (
     <div className="w-full h-full felt-bg relative flex items-center justify-center overflow-hidden">
       {/* Top-left controls: exit, trump, mic */}
-      <div className="absolute top-2 left-2 sm:top-4 sm:left-4 z-20 flex items-center gap-1.5">
+      <div className={`absolute z-20 flex items-center gap-1.5 ${
+        isLandscapeMobile ? 'top-1.5 left-1.5' : 'top-2 left-2 sm:top-4 sm:left-4'
+      }`}>
         <motion.button
           onClick={handleLeaveRoom}
           className="glass-panel p-1.5 sm:p-2 text-red-400/60 hover:text-red-400 hover:bg-red-500/10 transition-all rounded-lg"
@@ -106,7 +108,9 @@ export default function GameBoard() {
       </div>
 
       {/* Round / Trick counter */}
-      <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 glass-panel px-3 py-1 sm:px-4 sm:py-2 text-center">
+      <div className={`absolute left-1/2 -translate-x-1/2 z-20 glass-panel text-center ${
+        isLandscapeMobile ? 'top-1.5 px-2 py-0.5' : 'top-2 px-3 py-1 sm:px-4 sm:py-2'
+      }`}>
         <span className="text-[10px] sm:text-xs uppercase tracking-wider opacity-50">Round </span>
         <span className="text-gold font-bold text-xs sm:text-sm">{currentRound || 1}</span>
         <span className="text-[10px] sm:text-xs uppercase tracking-wider opacity-50 ml-2 sm:ml-3">Trick </span>
@@ -114,7 +118,9 @@ export default function GameBoard() {
       </div>
 
       {/* ScoreBoard - top right */}
-      <div className="absolute top-2 right-2 sm:top-4 sm:right-4 z-20">
+      <div className={`absolute z-20 ${
+        isLandscapeMobile ? 'top-1.5 right-1.5' : 'top-2 right-2 sm:top-4 sm:right-4'
+      }`}>
         <ScoreBoard />
       </div>
 
@@ -127,13 +133,14 @@ export default function GameBoard() {
             isCurrentTurn={currentTurn === player.id}
             isSelf={false}
             isSpeaking={speakingPeers.has(player.id)}
+            compact={isMobile || isLandscapeMobile}
           />
         </div>
       ))}
 
       {/* Turn indicator banner */}
       {phase === 'PLAYING' && currentTurn && (
-        <div className="absolute left-1/2 -translate-x-1/2 z-20" style={{ top: isMobile ? 'calc(50% - 65px)' : 'calc(50% - 90px)' }}>
+        <div className="absolute left-1/2 -translate-x-1/2 z-20" style={{ top: isLandscapeMobile ? 'calc(50% - 50px)' : isMobile ? 'calc(50% - 65px)' : 'calc(50% - 90px)' }}>
           <AnimatePresence mode="wait">
             <motion.div
               key={currentTurn}
@@ -168,13 +175,14 @@ export default function GameBoard() {
 
       {/* Bottom player station (current user info, above hand) */}
       {bottomPlayer && (
-        <div className={`absolute left-1/2 -translate-x-1/2 z-10 ${isLandscapeMobile ? 'bottom-24' : isMobile ? 'bottom-[115px]' : 'bottom-28 sm:bottom-32'}`}>
+        <div className={`absolute left-1/2 -translate-x-1/2 z-10 ${isLandscapeMobile ? 'bottom-[88px]' : isMobile ? 'bottom-[112px]' : 'bottom-28 sm:bottom-32'}`}>
           <PlayerStation
             player={bottomPlayer}
             position="bottom"
             isCurrentTurn={currentTurn === bottomPlayer.id}
             isSelf={true}
             isSpeaking={isSelfSpeaking}
+            compact={isLandscapeMobile}
           />
         </div>
       )}
