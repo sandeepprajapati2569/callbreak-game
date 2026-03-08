@@ -44,7 +44,7 @@ export default function GameBoard() {
   const { socket, setPlayerId, setRoomCode } = useSocket()
   const { state, dispatch } = useGame()
   const { players, playerId, currentTurn, currentRound, currentTrick, bids, phase } = state
-  const { isLandscapeMobile } = useOrientation()
+  const { isMobile, isLandscapeMobile } = useOrientation()
 
   const voiceChat = useVoiceChatContext()
   const { speakingPeers, isSelfSpeaking } = voiceChat
@@ -133,7 +133,7 @@ export default function GameBoard() {
 
       {/* Turn indicator banner */}
       {phase === 'PLAYING' && currentTurn && (
-        <div className="absolute left-1/2 -translate-x-1/2 z-20" style={{ top: 'calc(50% - 90px)' }}>
+        <div className="absolute left-1/2 -translate-x-1/2 z-20" style={{ top: isMobile ? 'calc(50% - 65px)' : 'calc(50% - 90px)' }}>
           <AnimatePresence mode="wait">
             <motion.div
               key={currentTurn}
@@ -168,7 +168,7 @@ export default function GameBoard() {
 
       {/* Bottom player station (current user info, above hand) */}
       {bottomPlayer && (
-        <div className={`absolute left-1/2 -translate-x-1/2 z-10 ${isLandscapeMobile ? 'bottom-24' : 'bottom-28 sm:bottom-32'}`}>
+        <div className={`absolute left-1/2 -translate-x-1/2 z-10 ${isLandscapeMobile ? 'bottom-24' : isMobile ? 'bottom-[115px]' : 'bottom-28 sm:bottom-32'}`}>
           <PlayerStation
             player={bottomPlayer}
             position="bottom"

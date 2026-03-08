@@ -25,7 +25,7 @@ export default function ScoreBoard() {
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            className="absolute top-full right-0 mt-2 glass-panel p-3 sm:p-4 min-w-[220px] sm:min-w-[280px] z-50"
+            className="absolute top-full right-0 mt-2 glass-panel p-3 sm:p-4 min-w-[180px] sm:min-w-[280px] z-50"
             initial={{ opacity: 0, y: -10, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -10, scale: 0.95 }}

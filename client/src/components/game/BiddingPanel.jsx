@@ -74,7 +74,7 @@ export default function BiddingPanel() {
                 <motion.button
                   key={num}
                   onClick={() => setSelectedBid(num)}
-                  className={`w-9 h-9 sm:w-10 sm:h-10 rounded-lg font-bold text-sm sm:text-base transition-all duration-200 ${
+                  className={`w-10 h-10 sm:w-11 sm:h-11 rounded-lg font-bold text-sm sm:text-base transition-all duration-200 ${
                     selectedBid === num
                       ? 'text-black'
                       : 'bg-white/5 text-white/80 hover:bg-white/10 border border-white/10'

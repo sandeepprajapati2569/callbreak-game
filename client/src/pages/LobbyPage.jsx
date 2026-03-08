@@ -5,6 +5,7 @@ import { Copy, Check, Crown, MessageCircle, Send, X, LogOut } from 'lucide-react
 import { useSocket } from '../context/SocketContext'
 import { useGame } from '../context/GameContext'
 import { useVoiceChatContext } from '../context/VoiceChatContext'
+import { useOrientation } from '../hooks/useOrientation'
 import VoiceChat from '../components/game/VoiceChat'
 import toast from 'react-hot-toast'
 
@@ -98,12 +99,15 @@ export default function LobbyPage() {
     navigate('/')
   }
 
+  const { isLandscapeMobile } = useOrientation()
+
   const myPlayer = players.find((p) => p.id === playerId)
   const isReady = myPlayer?.isReady || false
   const isHost = myPlayer?.seatIndex === 0
 
   const seatSlots = Array.from({ length: maxPlayers }, (_, i) => i)
   const gridClass = { 2: 'grid-cols-2', 3: 'grid-cols-3', 4: 'grid-cols-2', 5: 'grid-cols-3' }[maxPlayers] || 'grid-cols-2'
+  const landscapeGridClass = { 2: 'grid-cols-2', 3: 'grid-cols-3', 4: 'grid-cols-4', 5: 'grid-cols-5' }[maxPlayers] || 'grid-cols-4'
 
   return (
     <div
@@ -150,7 +154,7 @@ export default function LobbyPage() {
           </div>
 
           {/* Player seats grid */}
-          <div className={`grid ${gridClass} gap-4 w-full max-w-sm`}>
+          <div className={`grid ${isLandscapeMobile ? landscapeGridClass : gridClass} ${isLandscapeMobile ? 'gap-2' : 'gap-4'} w-full ${isLandscapeMobile ? 'max-w-2xl' : 'max-w-sm'}`}>
             {seatSlots.map((idx) => {
               const player = players[idx]
               const isSelf = player?.id === playerId
@@ -158,7 +162,7 @@ export default function LobbyPage() {
               return (
                 <motion.div
                   key={idx}
-                  className={`rounded-xl p-4 flex flex-col items-center gap-2 transition-all duration-300 ${
+                  className={`rounded-xl ${isLandscapeMobile ? 'p-2' : 'p-4'} flex flex-col items-center ${isLandscapeMobile ? 'gap-1' : 'gap-2'} transition-all duration-300 ${
                     player
                       ? player.isReady
                         ? 'gold-border bg-black/30'
@@ -176,14 +180,14 @@ export default function LobbyPage() {
                         <img
                           src={player.photoURL}
                           alt=""
-                          className={`w-12 h-12 rounded-full object-cover ${
+                          className={`${isLandscapeMobile ? 'w-9 h-9' : 'w-12 h-12'} rounded-full object-cover ${
                             player.isReady ? 'ring-2 ring-[var(--gold)]' : ''
                           }`}
                           referrerPolicy="no-referrer"
                         />
                       ) : (
                         <div
-                          className={`w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold ${
+                          className={`${isLandscapeMobile ? 'w-9 h-9 text-base' : 'w-12 h-12 text-xl'} rounded-full flex items-center justify-center font-bold ${
                             player.isReady ? 'text-black' : 'text-white bg-white/10'
                           }`}
                           style={
@@ -199,7 +203,7 @@ export default function LobbyPage() {
                       )}
 
                       {/* Name */}
-                      <span className="font-medium text-sm">
+                      <span className={`font-medium ${isLandscapeMobile ? 'text-xs' : 'text-sm'} truncate max-w-full`}>
                         {player.name}
                         {isSelf && (
                           <span className="opacity-40 ml-1">(You)</span>
@@ -217,27 +221,29 @@ export default function LobbyPage() {
                         {player.isReady ? 'Ready' : 'Not Ready'}
                       </span>
 
-                      <div className="flex items-center gap-2">
-                        {idx === 0 && (
-                          <Crown size={14} style={{ color: 'var(--gold)' }} className="opacity-50" />
-                        )}
-                        {isHost && !isSelf && (
-                          <button
-                            onClick={() => handleKickPlayer(player.id)}
-                            className="p-1 rounded-full hover:bg-red-500/20 transition-colors group"
-                            title={`Kick ${player.name}`}
-                          >
-                            <X size={14} className="text-red-400/50 group-hover:text-red-400" />
-                          </button>
-                        )}
-                      </div>
+                      {!isLandscapeMobile && (
+                        <div className="flex items-center gap-2">
+                          {idx === 0 && (
+                            <Crown size={14} style={{ color: 'var(--gold)' }} className="opacity-50" />
+                          )}
+                          {isHost && !isSelf && (
+                            <button
+                              onClick={() => handleKickPlayer(player.id)}
+                              className="p-1 rounded-full hover:bg-red-500/20 transition-colors group"
+                              title={`Kick ${player.name}`}
+                            >
+                              <X size={14} className="text-red-400/50 group-hover:text-red-400" />
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </>
                   ) : (
                     <>
-                      <div className="w-12 h-12 rounded-full border border-dashed border-white/20 flex items-center justify-center">
-                        <span className="text-white/20 text-2xl">?</span>
+                      <div className={`${isLandscapeMobile ? 'w-9 h-9' : 'w-12 h-12'} rounded-full border border-dashed border-white/20 flex items-center justify-center`}>
+                        <span className={`text-white/20 ${isLandscapeMobile ? 'text-lg' : 'text-2xl'}`}>?</span>
                       </div>
-                      <span className="text-white/30 text-sm">Waiting...</span>
+                      <span className={`text-white/30 ${isLandscapeMobile ? 'text-xs' : 'text-sm'}`}>Waiting...</span>
                     </>
                   )}
                 </motion.div>
@@ -248,7 +254,7 @@ export default function LobbyPage() {
           {/* Ready button */}
           <motion.button
             onClick={handleToggleReady}
-            className={`px-8 py-3 rounded-xl font-semibold text-lg transition-all duration-300 ${
+            className={`${isLandscapeMobile ? 'px-6 py-2 text-base' : 'px-8 py-3 text-lg'} rounded-xl font-semibold transition-all duration-300 ${
               isReady ? 'text-white border-2' : 'text-black'
             }`}
             style={
@@ -281,7 +287,7 @@ export default function LobbyPage() {
                 <p className="text-sm opacity-60 mb-1">Game starting in</p>
                 <motion.span
                   key={countdown}
-                  className="text-5xl font-bold"
+                  className={`${isLandscapeMobile ? 'text-3xl' : 'text-5xl'} font-bold`}
                   style={{ color: 'var(--gold)' }}
                   initial={{ opacity: 0, scale: 1.5 }}
                   animate={{ opacity: 1, scale: 1 }}

@@ -45,7 +45,7 @@ export default function RoundScoreModal() {
 
       {/* Modal */}
       <motion.div
-        className="relative glass-panel p-8 min-w-[420px] max-w-lg"
+        className="relative glass-panel p-5 sm:p-8 w-[92vw] sm:min-w-[420px] max-w-lg"
         initial={{ scale: 0.8, y: 30 }}
         animate={{ scale: 1, y: 0 }}
         exit={{ scale: 0.8, y: 30, opacity: 0 }}
@@ -53,14 +53,14 @@ export default function RoundScoreModal() {
       >
         {/* Title */}
         <h2
-          className="text-2xl font-bold text-center mb-6 tracking-wide"
+          className="text-xl sm:text-2xl font-bold text-center mb-4 sm:mb-6 tracking-wide"
           style={{ color: 'var(--gold)' }}
         >
           Round {currentRound} Complete
         </h2>
 
         {/* Score table */}
-        <table className="w-full text-sm mb-6">
+        <table className="w-full text-xs sm:text-sm mb-4 sm:mb-6">
           <thead>
             <tr className="border-b border-white/10">
               <th className="text-left py-2 text-xs uppercase tracking-wider opacity-50 font-normal">
@@ -118,7 +118,7 @@ export default function RoundScoreModal() {
         {/* Next round button */}
         <motion.button
           onClick={handleNextRound}
-          className="w-full py-3 rounded-xl font-bold text-lg text-black"
+          className="w-full py-2.5 sm:py-3 rounded-xl font-bold text-base sm:text-lg text-black"
           style={{
             background: 'linear-gradient(135deg, var(--gold) 0%, var(--gold-light) 100%)',
             boxShadow: '0 4px 15px rgba(212, 175, 55, 0.3)',
