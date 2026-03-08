@@ -105,7 +105,7 @@ export function useVoiceChat() {
   const isInVoiceRef = useRef(false)
 
   const [isInVoice, setIsInVoice] = useState(false)
-  const [isMuted, setIsMuted] = useState(false)
+  const [isMuted, setIsMuted] = useState(true)
   const [isForceMuted, setIsForceMuted] = useState(false)
   const [speakingPeers, setSpeakingPeers] = useState(new Set())
   const [mutedPlayers, setMutedPlayers] = useState(new Set())
@@ -192,9 +192,14 @@ export function useVoiceChat() {
         video: false,
       })
 
+      // Start muted by default
+      const audioTrack = stream.getAudioTracks()[0]
+      if (audioTrack) audioTrack.enabled = false
+
       localStreamRef.current = stream
       isInVoiceRef.current = true
       setIsInVoice(true)
+      setIsMuted(true)
 
       // Detect own speaking
       selfDetectorRef.current = createSpeakingDetector(stream, setIsSelfSpeaking)
