@@ -91,6 +91,7 @@ export default function GameBoard() {
 
   const bottomPlayer = positionedPlayers.find((p) => p.position === "bottom");
   const opponents = positionedPlayers.filter((p) => p.position !== "bottom");
+  const hasPlayers = players.length > 0;
 
   return (
     <div
@@ -231,6 +232,15 @@ export default function GameBoard() {
       >
         <PlayerHand />
       </div>
+
+      {!hasPlayers && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center px-6">
+          <div className="glass-panel w-full max-w-sm p-5 text-center">
+            <p className="text-sm uppercase tracking-widest opacity-55">Connecting</p>
+            <p className="mt-2 text-sm sm:text-base">Waiting for room data...</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -5,6 +5,23 @@ import { auth, googleProvider } from '../firebase'
 
 const AuthContext = createContext(null)
 
+function createGuestId() {
+  // Some Android WebView versions may not support crypto.randomUUID().
+  if (globalThis?.crypto?.randomUUID) {
+    return `guest_${globalThis.crypto.randomUUID().slice(0, 12)}`
+  }
+
+  if (globalThis?.crypto?.getRandomValues) {
+    const bytes = new Uint8Array(12)
+    globalThis.crypto.getRandomValues(bytes)
+    const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+    return `guest_${hex.slice(0, 12)}`
+  }
+
+  const fallback = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+  return `guest_${fallback.slice(0, 12)}`
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -70,7 +87,7 @@ export function AuthProvider({ children }) {
   }
 
   const signInAsGuest = (guestName) => {
-    const guestId = 'guest_' + crypto.randomUUID().slice(0, 12)
+    const guestId = createGuestId()
     const guestUser = {
       uid: guestId,
       displayName: guestName || 'Guest',

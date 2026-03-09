@@ -1,5 +1,5 @@
 import { useMemo, useState, useRef } from 'react'
-import { AnimatePresence } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import toast from 'react-hot-toast'
 import { useSocket } from '../../context/SocketContext'
 import { useGame } from '../../context/GameContext'
