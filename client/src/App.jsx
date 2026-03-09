@@ -4,6 +4,7 @@ import { AuthProvider } from './context/AuthContext'
 import { SocketProvider } from './context/SocketContext'
 import { GameProvider } from './context/GameContext'
 import { VoiceChatProvider } from './context/VoiceChatContext'
+import OfflineBanner from './components/OfflineBanner'
 import LandingPage from './pages/LandingPage'
 import LobbyPage from './pages/LobbyPage'
 import GamePage from './pages/GamePage'
@@ -12,6 +13,7 @@ import DonkeyGamePage from './pages/DonkeyGamePage'
 function App() {
   return (
     <AuthProvider>
+      <OfflineBanner />
       <BrowserRouter>
         <SocketProvider>
           <GameProvider>
