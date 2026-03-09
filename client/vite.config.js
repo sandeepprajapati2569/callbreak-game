@@ -15,7 +15,7 @@ export default defineConfig({
         short_name: 'Call Group',
         description: 'Play the classic trick-taking card game online with friends.',
         start_url: '/',
-        display: 'standalone',
+        display: 'fullscreen',
         orientation: 'any',
         theme_color: '#0A3622',
         background_color: '#072818',
