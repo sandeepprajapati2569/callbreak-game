@@ -96,13 +96,13 @@ export default function GameBoard() {
   return (
     <div
       className="w-full h-full felt-bg relative flex items-center justify-center overflow-hidden"
-      style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+      style={{ paddingTop: "0px" }}
     >
       {/* Top HUD: aligned for native status bar + landscape */}
       <div
         className="absolute left-0 right-0 z-20 px-2 sm:px-4"
         style={{
-          top: "calc(env(safe-area-inset-top, 0px) + var(--native-status-bar-offset, 0px) + 2px)",
+          top: "calc(var(--native-status-bar-offset, 0px) + 1px)",
         }}
       >
         <div className="grid grid-cols-[auto_1fr_auto] items-start gap-2">
@@ -148,7 +148,7 @@ export default function GameBoard() {
           className={
             isLandscapeMobile
               ? LANDSCAPE_POSITION_STYLES[player.position] ||
-                POSITION_STYLES[player.position]
+              POSITION_STYLES[player.position]
               : POSITION_STYLES[player.position]
           }
         >

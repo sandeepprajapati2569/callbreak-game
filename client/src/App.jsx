@@ -24,7 +24,7 @@ function App() {
       const isLandscape = window.innerWidth > window.innerHeight
       document.documentElement.style.setProperty(
         '--native-status-bar-offset',
-        isLandscape ? '10px' : '30px'
+        isLandscape ? '2px' : '4px'
       )
     }
 
