@@ -3,11 +3,20 @@ import { motion } from 'framer-motion'
 import { useSocket } from '../../context/SocketContext'
 import { useGame } from '../../context/GameContext'
 
+const AUTO_ADVANCE_SECONDS = 12
+const MANUAL_NEXT_ROUND_DELAY_SECONDS = 3
+
 export default function RoundScoreModal() {
   const { socket } = useSocket()
   const { state } = useGame()
   const { players, scores, totalScores, currentRound, playerId, bids } = state
-  const [autoCloseTimer, setAutoCloseTimer] = useState(10)
+  const [autoCloseTimer, setAutoCloseTimer] = useState(AUTO_ADVANCE_SECONDS)
+  const [manualCooldown, setManualCooldown] = useState(MANUAL_NEXT_ROUND_DELAY_SECONDS)
+
+  useEffect(() => {
+    setAutoCloseTimer(AUTO_ADVANCE_SECONDS)
+    setManualCooldown(MANUAL_NEXT_ROUND_DELAY_SECONDS)
+  }, [currentRound])
 
   useEffect(() => {
     if (autoCloseTimer <= 0) return
@@ -15,8 +24,15 @@ export default function RoundScoreModal() {
     return () => clearTimeout(timer)
   }, [autoCloseTimer])
 
+  useEffect(() => {
+    if (manualCooldown <= 0) return
+    const timer = setTimeout(() => setManualCooldown(manualCooldown - 1), 1000)
+    return () => clearTimeout(timer)
+  }, [manualCooldown])
+
   const handleNextRound = () => {
     if (!socket) return
+    if (manualCooldown > 0) return
     socket.emit('next-round')
   }
 
@@ -118,15 +134,19 @@ export default function RoundScoreModal() {
         {/* Next round button */}
         <motion.button
           onClick={handleNextRound}
+          disabled={manualCooldown > 0}
           className="w-full py-2.5 sm:py-3 rounded-xl font-bold text-base sm:text-lg text-black"
           style={{
             background: 'linear-gradient(135deg, var(--gold) 0%, var(--gold-light) 100%)',
             boxShadow: '0 4px 15px rgba(212, 175, 55, 0.3)',
+            opacity: manualCooldown > 0 ? 0.75 : 1,
           }}
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
         >
-          Next Round {autoCloseTimer > 0 && `(${autoCloseTimer}s)`}
+          {manualCooldown > 0
+            ? `Next Round Ready In ${manualCooldown}s`
+            : `Next Round${autoCloseTimer > 0 ? ` (${autoCloseTimer}s)` : ''}`}
         </motion.button>
       </motion.div>
     </motion.div>

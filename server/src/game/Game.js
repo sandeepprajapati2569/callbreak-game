@@ -17,6 +17,9 @@ const PHASES = {
 const TOTAL_ROUNDS = 5;
 const TURN_TIMEOUT_MS = 60_000;
 const MIN_BID = 1;
+const MIN_ROUND_END_DISPLAY_MS = 3_000;
+const ROUND_END_AUTO_ADVANCE_MS = 12_000;
+const FINAL_ROUND_TO_GAME_OVER_MS = 6_000;
 
 export default class Game extends EventEmitter {
   /**
@@ -46,6 +49,8 @@ export default class Game extends EventEmitter {
 
     this.scoreHistory = []; // Array of round results
     this.turnTimer = null;
+    this._roundTimer = null;
+    this._roundEndedAt = null;
   }
 
   // ---------------------------------------------------------------------------
@@ -257,6 +262,12 @@ export default class Game extends EventEmitter {
    */
   triggerNextRound() {
     if (this.phase !== PHASES.ROUND_END) return;
+
+    const elapsed = this._roundEndedAt ? Date.now() - this._roundEndedAt : MIN_ROUND_END_DISPLAY_MS;
+    if (elapsed < MIN_ROUND_END_DISPLAY_MS) {
+      return;
+    }
+
     if (this._roundTimer) {
       clearTimeout(this._roundTimer);
       this._roundTimer = null;
@@ -492,6 +503,7 @@ export default class Game extends EventEmitter {
   _endRound() {
     this._clearTurnTimer();
     this.phase = PHASES.ROUND_END;
+    this._roundEndedAt = Date.now();
 
     const roundInput = this.players.map((p) => ({
       id: p.id,
@@ -532,10 +544,10 @@ export default class Game extends EventEmitter {
     // Check if game is over
     if (this.currentRound >= TOTAL_ROUNDS) {
       // Small delay to let clients show round scores before game over
-      setTimeout(() => this._endGame(), 2000);
+      setTimeout(() => this._endGame(), FINAL_ROUND_TO_GAME_OVER_MS);
     } else {
       // Delay next round so clients can show round score modal
-      this._roundTimer = setTimeout(() => this._nextRound(), 8000);
+      this._roundTimer = setTimeout(() => this._nextRound(), ROUND_END_AUTO_ADVANCE_MS);
     }
   }
 
@@ -543,6 +555,7 @@ export default class Game extends EventEmitter {
    * Starts the next round: rotates dealer, deals new hands, begins bidding.
    */
   _nextRound() {
+    this._roundEndedAt = null;
     this.currentRound += 1;
     this.dealerIndex = (this.dealerIndex + 1) % this.numPlayers;
     this.currentTrickNumber = 0;
@@ -557,6 +570,11 @@ export default class Game extends EventEmitter {
    */
   _endGame() {
     this._clearTurnTimer();
+    if (this._roundTimer) {
+      clearTimeout(this._roundTimer);
+      this._roundTimer = null;
+    }
+    this._roundEndedAt = null;
     this.phase = PHASES.GAME_OVER;
 
     const totalScores = this._computeTotalScores();
