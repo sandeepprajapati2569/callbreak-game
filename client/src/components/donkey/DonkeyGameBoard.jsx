@@ -236,11 +236,10 @@ export default function DonkeyGameBoard() {
       <div className="relative z-10 pb-3 px-3">
         {/* My info row */}
         <div className="flex items-center justify-center gap-3 mb-2">
-          <DonkeyLetters letters={myPlayer?.letters || ''} small />
           {myHand.length === 0 && myPlayer?.isActive === false ? (
             <span className="text-xs text-green-400 font-semibold">✓ Safe</span>
           ) : (
-            <span className="text-xs opacity-40">{myHand.length} cards</span>
+            <span className="text-xs opacity-60">Cards in hand: {myHand.length}</span>
           )}
           {isMyTurn && (
             <span className="text-xs font-semibold" style={{ color: 'var(--gold)' }}>YOUR TURN</span>
@@ -342,9 +341,6 @@ function DonkeyStation({ player, isActive, isCurrentTurn, isRightNeighbor, timer
       <span className="text-[10px] sm:text-xs font-medium truncate max-w-[70px] sm:max-w-[90px]">
         {player.name}
       </span>
-
-      {/* Letters */}
-      <DonkeyLetters letters={player.letters || ''} small />
 
       {/* Status indicators */}
       {isSafe ? (

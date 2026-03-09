@@ -2,7 +2,6 @@ import { EventEmitter } from 'events';
 import { createDeck, shuffle, deal } from './Deck.js';
 
 const PICK_TIMEOUT_MS = 20_000; // 20 seconds to pick a card
-const DONKEY_WORD = 'DONKEY';
 
 /**
  * Finds a rank that has 4 or more cards in the hand.
@@ -25,8 +24,7 @@ function findFourOfAKind(hand) {
  *
  * Full 52-card deck dealt among 2-5 players. Players take turns picking a card
  * blindly from their right neighbor's hand. Any 4-of-a-kind formed is auto-discarded.
- * Last player holding cards loses the round and gets a letter (D-O-N-K-E-Y).
- * First to spell DONKEY loses the game.
+ * Last player holding cards at the end is the Gadha (Donkey) for that game.
  */
 export default class DonkeyGame extends EventEmitter {
   /**
@@ -50,11 +48,11 @@ export default class DonkeyGame extends EventEmitter {
       seatIndex: p.seatIndex,
       socketId: p.socketId,
       hand: [],
-      letters: '',      // accumulates D-O-N-K-E-Y
+      letters: '',      // kept for backward UI compatibility
       isActive: true,   // still in the current round (has cards)
     }));
 
-    this.phase = 'WAITING'; // WAITING | PLAYING | ROUND_RESULT | GAME_OVER
+    this.phase = 'WAITING'; // WAITING | PLAYING | GAME_OVER
     this.roundNumber = 0;
     this.currentTurnIndex = -1;  // index into this.players array
     this.activePlayers = [];     // IDs of players still holding cards
@@ -154,7 +152,7 @@ export default class DonkeyGame extends EventEmitter {
 
     // Check if round is over (1 or fewer active players)
     if (this.activePlayers.length <= 1) {
-      const loserId = this.activePlayers.length === 1 ? this.activePlayers[0] : null;
+      const loserId = this._resolveRoundLoser(currentPlayer.id, rightNeighbor.id);
       setTimeout(() => this._endRound(loserId), 1500);
       return;
     }
@@ -165,17 +163,10 @@ export default class DonkeyGame extends EventEmitter {
     this._startTurnTimer();
   }
 
-  /**
-   * Trigger next round from round-result screen.
-   */
+  // Trigger a new round (used as "play again" from game-over screen).
   triggerNextRound() {
-    if (this.phase !== 'ROUND_RESULT') return;
-    const donkeyPlayer = this.players.find(
-      (p) => p.letters.length >= DONKEY_WORD.length
-    );
-    if (!donkeyPlayer) {
-      this._startNewRound();
-    }
+    if (this.phase !== 'GAME_OVER') return;
+    this._startNewRound();
   }
 
   /**
@@ -196,9 +187,7 @@ export default class DonkeyGame extends EventEmitter {
       phase:
         this.phase === 'PLAYING'
           ? 'DONKEY_PLAYING'
-          : this.phase === 'ROUND_RESULT'
-            ? 'DONKEY_ROUND_RESULT'
-            : this.phase === 'GAME_OVER'
+          : this.phase === 'GAME_OVER'
               ? 'DONKEY_GAME_OVER'
               : 'DONKEY_WAITING',
       roundNumber: this.roundNumber,
@@ -236,6 +225,9 @@ export default class DonkeyGame extends EventEmitter {
 
   _startNewRound() {
     this.roundNumber++;
+    this.phase = 'WAITING';
+    this._clearTurnTimer();
+    this.currentTurnIndex = -1;
 
     // Reset per-round state for all players
     this.players.forEach((p) => {
@@ -310,7 +302,7 @@ export default class DonkeyGame extends EventEmitter {
 
     // Check if round already over after initial discards
     if (this.activePlayers.length <= 1) {
-      const loserId = this.activePlayers.length === 1 ? this.activePlayers[0] : null;
+      const loserId = this._resolveRoundLoser();
       setTimeout(() => this._endRound(loserId), 1500);
       return;
     }
@@ -436,39 +428,12 @@ export default class DonkeyGame extends EventEmitter {
   }
 
   _endRound(loserId) {
-    this.phase = 'ROUND_RESULT';
+    this.phase = 'GAME_OVER';
     this._clearTurnTimer();
 
     this.roundLoserId = loserId;
-    const loser = this._getPlayer(loserId);
-    let newLetter = '';
-    if (loser) {
-      const nextIdx = loser.letters.length;
-      if (nextIdx < DONKEY_WORD.length) {
-        newLetter = DONKEY_WORD[nextIdx];
-        loser.letters += newLetter;
-      }
-    }
-
-    const playersInfo = this.players.map((p) => ({
-      id: p.id,
-      name: p.name,
-      letters: p.letters,
-      seatIndex: p.seatIndex,
-    }));
-
-    this.emit('donkey-round-result', {
-      loserId,
-      loserName: loser?.name,
-      newLetter,
-      players: playersInfo,
-      round: this.roundNumber,
-    });
-
-    // Check if game over
-    if (loser && loser.letters.length >= DONKEY_WORD.length) {
-      setTimeout(() => this._endGame(loserId), 2000);
-    }
+    // Indian Gadha-Ladan style: this round's last card-holder is the donkey.
+    setTimeout(() => this._endGame(loserId), 900);
   }
 
   _endGame(donkeyPlayerId) {
@@ -480,11 +445,13 @@ export default class DonkeyGame extends EventEmitter {
     this.emit('donkey-game-over', {
       donkeyPlayerId,
       donkeyPlayerName: donkeyPlayer?.name,
+      round: this.roundNumber,
       players: this.players.map((p) => ({
         id: p.id,
         name: p.name,
         letters: p.letters,
         seatIndex: p.seatIndex,
+        cardCount: p.hand.length,
       })),
     });
   }
@@ -495,6 +462,36 @@ export default class DonkeyGame extends EventEmitter {
 
   _getPlayer(id) {
     return this.players.find((p) => p.id === id);
+  }
+
+  /**
+   * Determine round loser robustly, even in rare edge-cases where all players
+   * become empty at the same time after one pick.
+   */
+  _resolveRoundLoser(primaryFallbackId = null, secondaryFallbackId = null) {
+    if (this.activePlayers.length === 1) {
+      return this.activePlayers[0];
+    }
+
+    let maxCards = -1;
+    let candidates = [];
+    for (const player of this.players) {
+      if (player.hand.length > maxCards) {
+        maxCards = player.hand.length;
+        candidates = [player];
+      } else if (player.hand.length === maxCards) {
+        candidates.push(player);
+      }
+    }
+
+    if (maxCards > 0 && candidates.length > 0) {
+      candidates.sort((a, b) => a.seatIndex - b.seatIndex);
+      return candidates[0].id;
+    }
+
+    if (primaryFallbackId) return primaryFallbackId;
+    if (secondaryFallbackId) return secondaryFallbackId;
+    return this.players[0]?.id || null;
   }
 
   /**
@@ -523,4 +520,4 @@ export default class DonkeyGame extends EventEmitter {
   }
 }
 
-export { DONKEY_WORD, PICK_TIMEOUT_MS };
+export { PICK_TIMEOUT_MS };

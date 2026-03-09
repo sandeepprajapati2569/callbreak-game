@@ -870,8 +870,10 @@ export default function registerHandlers(io, socket, rooms, games) {
   // -------------------------------------------------------------------------
   socket.on('donkey-next-round', () => {
     const { roomCode } = socket.data || {};
+    const room = rooms.get(roomCode);
     const game = games.get(roomCode);
     if (game && game instanceof DonkeyGame) {
+      if (room) room.status = 'in-progress';
       game.triggerNextRound();
     }
   });

@@ -33,7 +33,7 @@ const initialState = {
   tricksPerRound: 13,
   queueStatus: null,
   // Donkey (Gadha Ladan) specific state
-  donkeyPlayers: [],           // players with letters, isActive, cardCount, seatIndex
+  donkeyPlayers: [],           // players with isActive, cardCount, seatIndex
   donkeyRound: 0,
   activePlayers: [],           // IDs of players still holding cards
   currentTurnPlayerId: null,   // whose turn it is to pick
@@ -44,8 +44,8 @@ const initialState = {
   donkeyTurnTimerDuration: 20000,
   donkeyTurnTimerPlayerId: null,
   lastDiscardedSet: null,      // { playerId, playerName, rank }
-  donkeyRoundResult: null,     // { loserId, loserName, newLetter, players, round }
-  donkeyGameResult: null,      // { donkeyPlayerId, donkeyPlayerName, players }
+  donkeyRoundResult: null,
+  donkeyGameResult: null,      // { donkeyPlayerId, donkeyPlayerName, players, round }
 }
 
 function gameReducer(state, action) {
@@ -277,6 +277,7 @@ function gameReducer(state, action) {
         rightNeighborCardCount: 0,
         lastDiscardedSet: null,
         donkeyRoundResult: null,
+        donkeyGameResult: null,
       }
 
     case 'DONKEY_SET_DISCARDED':
