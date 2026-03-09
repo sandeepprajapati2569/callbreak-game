@@ -21,6 +21,8 @@ export function SocketProvider({ children }) {
     // Use Firebase UID if logged in, otherwise fall back to stored playerId
     const authPlayerId = user?.uid || playerId
 
+    const isNativePlatform = Boolean(window?.Capacitor?.isNativePlatform?.())
+
     const socketOptions = {
       auth: {
         playerId: authPlayerId,
@@ -29,6 +31,9 @@ export function SocketProvider({ children }) {
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
+      // On native WebView, force WebSocket transport to avoid CORS issues
+      // from initial HTTP polling requests.
+      ...(isNativePlatform ? { transports: ['websocket'] } : {}),
     }
 
     // When connecting to same origin (dev), use path-based config

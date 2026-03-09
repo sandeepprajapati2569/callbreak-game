@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import { onAuthStateChanged, signInWithPopup, signOut as firebaseSignOut } from 'firebase/auth'
+import { GoogleAuthProvider, onAuthStateChanged, signInWithCredential, signInWithPopup, signOut as firebaseSignOut } from 'firebase/auth'
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication'
 import { auth, googleProvider } from '../firebase'
 
 const AuthContext = createContext(null)
@@ -40,6 +41,26 @@ export function AuthProvider({ children }) {
 
   const signInWithGoogle = async () => {
     try {
+      const isNativePlatform = Boolean(window?.Capacitor?.isNativePlatform?.())
+
+      if (isNativePlatform) {
+        // Native Google sign-in avoids webview redirect/sessionStorage issues in APK.
+        const nativeResult = await FirebaseAuthentication.signInWithGoogle({
+          skipNativeAuth: true,
+        })
+
+        const idToken = nativeResult?.credential?.idToken
+        const accessToken = nativeResult?.credential?.accessToken
+
+        if (!idToken) {
+          throw new Error('Google sign-in did not return an ID token.')
+        }
+
+        const credential = GoogleAuthProvider.credential(idToken, accessToken)
+        const firebaseResult = await signInWithCredential(auth, credential)
+        return firebaseResult.user
+      }
+
       const result = await signInWithPopup(auth, googleProvider)
       return result.user
     } catch (error) {
@@ -69,6 +90,9 @@ export function AuthProvider({ children }) {
     }
     try {
       await firebaseSignOut(auth)
+      if (window?.Capacitor?.isNativePlatform?.()) {
+        await FirebaseAuthentication.signOut()
+      }
     } catch (error) {
       console.error('Sign-out error:', error)
       throw error

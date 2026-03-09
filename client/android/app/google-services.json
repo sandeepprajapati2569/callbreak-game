@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "747764574256",
+    "project_id": "callgroup-77248",
+    "storage_bucket": "callgroup-77248.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:747764574256:android:3f0b29ed2fc6758ee225f5",
+        "android_client_info": {
+          "package_name": "com.callgroup.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "747764574256-0hfpfmogohsp09nd82ajkpfmnnkslneq.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBQGxK7iR2641dMrkvkPjl2NdxOb0ojxL4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "747764574256-0hfpfmogohsp09nd82ajkpfmnnkslneq.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

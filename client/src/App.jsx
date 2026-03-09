@@ -1,5 +1,7 @@
+import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
+import { StatusBar, Style } from '@capacitor/status-bar'
 import { AuthProvider } from './context/AuthContext'
 import { SocketProvider } from './context/SocketContext'
 import { GameProvider } from './context/GameContext'
@@ -11,6 +13,24 @@ import GamePage from './pages/GamePage'
 import DonkeyGamePage from './pages/DonkeyGamePage'
 
 function App() {
+  useEffect(() => {
+    const isNativePlatform = Boolean(window?.Capacitor?.isNativePlatform?.())
+    if (!isNativePlatform) return
+
+    const setupStatusBar = async () => {
+      try {
+        // Keep status bar visible and outside WebView content.
+        await StatusBar.setOverlaysWebView({ overlay: false })
+        await StatusBar.setStyle({ style: Style.Dark })
+        await StatusBar.show()
+      } catch (error) {
+        console.error('Status bar setup failed:', error)
+      }
+    }
+
+    setupStatusBar()
+  }, [])
+
   return (
     <AuthProvider>
       <OfflineBanner />

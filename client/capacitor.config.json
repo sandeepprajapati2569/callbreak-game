@@ -1,0 +1,11 @@
+{
+  "appId": "com.callgroup.app",
+  "appName": "Call Group",
+  "webDir": "dist",
+  "plugins": {
+    "FirebaseAuthentication": {
+      "skipNativeAuth": true,
+      "providers": ["google.com"]
+    }
+  }
+}

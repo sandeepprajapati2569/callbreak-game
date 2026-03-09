@@ -11,6 +11,9 @@ const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || '';
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',
   'http://localhost:4173',
+  'http://localhost',
+  'capacitor://localhost',
+  'ionic://localhost',
   ...CLIENT_ORIGIN.split(',').map(s => s.trim()).filter(Boolean),
 ];
 
