@@ -32,12 +32,15 @@ export function useOrientation() {
     }
   }, [])
 
+  const isLandscape = dimensions.width > dimensions.height
   const isMobile = dimensions.width < 640
-  const isLandscapeMobile = !isMobile && dimensions.width < 1024 && dimensions.height < 500
-  const isPortraitMobile = dimensions.width < 768 && dimensions.height > dimensions.width
+  // Treat short landscape viewports as mobile game layout (phones + small tablets in landscape).
+  const isLandscapeMobile = isLandscape && dimensions.height <= 560 && dimensions.width <= 1280
+  const isPortraitMobile = !isLandscape && dimensions.width < 768
 
   return {
     ...dimensions,
+    isLandscape,
     isMobile,
     isLandscapeMobile,
     isPortraitMobile,

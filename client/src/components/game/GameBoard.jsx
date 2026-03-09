@@ -92,6 +92,16 @@ export default function GameBoard() {
   const bottomPlayer = positionedPlayers.find((p) => p.position === "bottom");
   const opponents = positionedPlayers.filter((p) => p.position !== "bottom");
   const hasPlayers = players.length > 0;
+  const hudTopOffset = isLandscapeMobile
+    ? "calc(env(safe-area-inset-top, 0px) + var(--native-status-bar-offset, 0px) + 2px)"
+    : "calc(env(safe-area-inset-top, 0px) + var(--native-status-bar-offset, 0px) + 4px)";
+  const bottomStationPositionClass = isLandscapeMobile
+    ? phase === "BIDDING"
+      ? "bottom-[76px]"
+      : "bottom-[88px]"
+    : isMobile
+      ? "bottom-[112px]"
+      : "bottom-28 sm:bottom-32";
 
   return (
     <div
@@ -102,11 +112,11 @@ export default function GameBoard() {
       <div
         className="absolute left-0 right-0 z-20 px-2 sm:px-4"
         style={{
-          top: "calc(var(--native-status-bar-offset, 0px) + 1px)",
+          top: hudTopOffset,
         }}
       >
-        <div className="grid grid-cols-[auto_1fr_auto] items-start gap-2">
-          <div className="justify-self-start flex items-center gap-1.5">
+        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5 sm:gap-2">
+          <div className="justify-self-start flex items-center gap-1.5 sm:gap-2">
             <motion.button
               onClick={handleLeaveRoom}
               className="glass-panel p-1.5 sm:p-2 text-red-400/60 hover:text-red-400 hover:bg-red-500/10 transition-all rounded-lg"
@@ -120,7 +130,7 @@ export default function GameBoard() {
             </div>
           </div>
 
-          <div className="justify-self-center glass-panel text-center px-2 py-0.5 sm:px-4 sm:py-1.5">
+          <div className="justify-self-center glass-panel text-center px-2 py-1 sm:px-4 sm:py-1.5 min-w-[148px] sm:min-w-[186px]">
             <span className="text-[10px] sm:text-xs uppercase tracking-wider opacity-50">
               Round{" "}
             </span>
@@ -212,7 +222,7 @@ export default function GameBoard() {
       {/* Bottom player station (current user info, above hand) */}
       {bottomPlayer && (
         <div
-          className={`absolute left-1/2 -translate-x-1/2 z-10 ${isLandscapeMobile ? "bottom-[88px]" : isMobile ? "bottom-[112px]" : "bottom-28 sm:bottom-32"}`}
+          className={`absolute left-1/2 -translate-x-1/2 z-10 ${bottomStationPositionClass}`}
         >
           <PlayerStation
             player={bottomPlayer}

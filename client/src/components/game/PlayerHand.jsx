@@ -95,37 +95,47 @@ export default function PlayerHand() {
   }
 
   const cardCount = sortedHand.length
+  const isLandscapeBidding = isLandscapeMobile && phase === 'BIDDING'
 
   // Dynamic layout: calculate overlap and scale to fit screen
-  const padding = isMobile ? 16 : 32
+  const padding = isLandscapeBidding ? 20 : isMobile ? 16 : 32
   const availableWidth = windowWidth - padding
-  const cardWidthPx = isMobile ? 62 : isLandscapeMobile ? 56 : 80
+  const cardWidthPx = isLandscapeBidding ? 56 : isMobile ? 62 : isLandscapeMobile ? 56 : 80
 
   // Comfortable step (visible portion per card) for readable cards
-  const comfortableStep = isMobile ? 24 : isLandscapeMobile ? 24 : 30
+  const comfortableStep = isLandscapeBidding ? 34 : isMobile ? 24 : isLandscapeMobile ? 24 : 30
   const neededWidth = cardCount <= 1
     ? cardWidthPx
     : cardWidthPx + (cardCount - 1) * comfortableStep
 
-  // Scale the hand down if it exceeds available width (min 0.65 to keep cards readable)
-  const handScale = Math.max(0.65, Math.min(1, availableWidth / neededWidth))
+  // Scale the hand down if it exceeds available width.
+  const minScale = isLandscapeBidding ? 0.78 : 0.65
+  const handScale = Math.max(minScale, Math.min(1, availableWidth / neededWidth))
 
   // Spread angle also reduced for large hands
-  const maxSpread = isMobile ? 20 : isLandscapeMobile ? 25 : 35
-  const spreadAngle = cardCount <= 1 ? 0 : Math.min(maxSpread, cardCount * (isMobile ? 1.2 : isLandscapeMobile ? 1.5 : 2))
+  const maxSpread = isLandscapeBidding ? 7 : isMobile ? 20 : isLandscapeMobile ? 25 : 35
+  const spreadAngle = cardCount <= 1
+    ? 0
+    : Math.min(maxSpread, cardCount * (isLandscapeBidding ? 0.55 : isMobile ? 1.2 : isLandscapeMobile ? 1.5 : 2))
 
   // Negative margin = card width - step
   const negativeMargin = cardCount <= 1 ? 0 : cardWidthPx - comfortableStep
 
-  // If cards overflow even at min scale, enable horizontal scroll
-  const needsScroll = handScale <= 0.65 && neededWidth * 0.65 > availableWidth
+  // If cards still overflow after scaling, enable horizontal scroll.
+  const needsScroll = neededWidth * handScale > availableWidth
 
   return (
     <div
       className={`flex justify-center items-end px-2 sm:px-4 hand-fan ${needsScroll ? 'scrollbar-hide overflow-x-auto' : ''}`}
       style={{
-        minHeight: isMobile ? '110px' : isLandscapeMobile ? '85px' : '140px',
-        paddingBottom: isMobile ? 'max(12px, env(safe-area-inset-bottom, 12px))' : isLandscapeMobile ? '4px' : '12px',
+        minHeight: isLandscapeBidding ? '98px' : isMobile ? '110px' : isLandscapeMobile ? '85px' : '140px',
+        paddingBottom: isLandscapeBidding
+          ? 'max(4px, env(safe-area-inset-bottom, 2px))'
+          : isMobile
+            ? 'max(12px, env(safe-area-inset-bottom, 12px))'
+            : isLandscapeMobile
+              ? '4px'
+              : '12px',
       }}
     >
       <div
@@ -133,7 +143,7 @@ export default function PlayerHand() {
         style={{
           transform: handScale < 1 ? `scale(${handScale})` : undefined,
           transformOrigin: 'bottom center',
-          minWidth: needsScroll ? `${neededWidth * 0.65}px` : undefined,
+          minWidth: needsScroll ? `${neededWidth * handScale}px` : undefined,
         }}
       >
         <AnimatePresence mode="popLayout">
@@ -148,7 +158,11 @@ export default function PlayerHand() {
             const offset = index - mid
             const angle = (offset / Math.max(cardCount - 1, 1)) * spreadAngle
             const rawYOffset = Math.abs(offset) * Math.abs(offset) * 1.2
-            const yOffset = isMobile ? Math.min(rawYOffset, 6) : Math.min(rawYOffset, 20)
+            const yOffset = isLandscapeBidding
+              ? Math.min(rawYOffset, 2)
+              : isMobile
+                ? Math.min(rawYOffset, 6)
+                : Math.min(rawYOffset, 20)
 
             return (
               <motion.div

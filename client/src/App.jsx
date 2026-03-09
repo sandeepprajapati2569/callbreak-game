@@ -1,7 +1,9 @@
-import { useEffect } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { useEffect, useRef } from 'react'
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { StatusBar, Style } from '@capacitor/status-bar'
+import { ScreenOrientation } from '@capacitor/screen-orientation'
+import { KeepAwake } from '@capacitor-community/keep-awake'
 import { AuthProvider } from './context/AuthContext'
 import { SocketProvider } from './context/SocketContext'
 import { GameProvider } from './context/GameContext'
@@ -11,6 +13,89 @@ import LandingPage from './pages/LandingPage'
 import LobbyPage from './pages/LobbyPage'
 import GamePage from './pages/GamePage'
 import DonkeyGamePage from './pages/DonkeyGamePage'
+
+function NativeSessionController() {
+  const location = useLocation()
+  const wakeLockRef = useRef(null)
+
+  useEffect(() => {
+    const isNativePlatform = Boolean(window?.Capacitor?.isNativePlatform?.())
+    const isGameRoute = location.pathname === '/game' || location.pathname === '/donkey-game'
+
+    const releaseWebWakeLock = async () => {
+      if (!wakeLockRef.current) return
+      try {
+        await wakeLockRef.current.release()
+      } catch (error) {
+        console.error('Wake lock release failed:', error)
+      } finally {
+        wakeLockRef.current = null
+      }
+    }
+
+    const requestWebWakeLock = async () => {
+      if (!('wakeLock' in navigator)) return
+      if (!isGameRoute) {
+        await releaseWebWakeLock()
+        return
+      }
+
+      try {
+        wakeLockRef.current = await navigator.wakeLock.request('screen')
+      } catch (error) {
+        console.error('Wake lock request failed:', error)
+      }
+    }
+
+    const applySessionPreferences = async () => {
+      if (isNativePlatform) {
+        try {
+          await ScreenOrientation.lock({
+            orientation: isGameRoute ? 'landscape' : 'portrait',
+          })
+        } catch (error) {
+          console.error('Orientation lock failed:', error)
+        }
+
+        try {
+          if (isGameRoute) {
+            await KeepAwake.keepAwake()
+          } else {
+            await KeepAwake.allowSleep()
+          }
+        } catch (error) {
+          console.error('Native keep-awake update failed:', error)
+        }
+      } else {
+        await requestWebWakeLock()
+      }
+    }
+
+    const handleVisibility = async () => {
+      if (isNativePlatform) return
+
+      if (document.visibilityState === 'visible') {
+        await requestWebWakeLock()
+      } else {
+        await releaseWebWakeLock()
+      }
+    }
+
+    applySessionPreferences()
+    document.addEventListener('visibilitychange', handleVisibility)
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility)
+      if (isNativePlatform) {
+        KeepAwake.allowSleep().catch(() => {})
+      } else {
+        releaseWebWakeLock()
+      }
+    }
+  }, [location.pathname])
+
+  return null
+}
 
 function App() {
   useEffect(() => {
@@ -57,6 +142,7 @@ function App() {
     <AuthProvider>
       <OfflineBanner />
       <BrowserRouter>
+        <NativeSessionController />
         <SocketProvider>
           <GameProvider>
             <VoiceChatProvider>

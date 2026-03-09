@@ -5,12 +5,7 @@ import { useOrientation } from '../../hooks/useOrientation'
 import Card from './Card'
 
 // Offsets for card positions relative to center, based on relative player position
-function getOffsets() {
-  const w = typeof window !== 'undefined' ? window.innerWidth : 1280
-  const h = typeof window !== 'undefined' ? window.innerHeight : 800
-  const isMobile = w < 640
-  const isLandscapeMobile = !isMobile && w < 1024 && h < 500
-
+function getOffsets({ isMobile, isLandscapeMobile }) {
   if (isMobile) {
     return {
       bottom: { x: 0, y: 28, fromX: 0, fromY: 80 },
@@ -98,7 +93,7 @@ export default function TrickArea({ positionedPlayers }) {
       <AnimatePresence mode="sync">
         {trickCards.map((tc, idx) => {
           const position = playerPositionMap[tc.playerId] || 'bottom'
-          const offsets = getOffsets()
+          const offsets = getOffsets({ isMobile, isLandscapeMobile })
           const offset = offsets[position]
           const isWinner = trickWinner === tc.playerId
           const isCollecting = animPhase === 'collect'

@@ -22,6 +22,9 @@ export default function ScoreBoard({ compact = false }) {
         {!compact && (
           <span className="text-xs uppercase tracking-wider opacity-60">Scores</span>
         )}
+        {compact && (
+          <span className="text-[10px] uppercase tracking-wider opacity-60">Score</span>
+        )}
         {isOpen ? <ChevronUp size={14} className="opacity-40" /> : <ChevronDown size={14} className="opacity-40" />}
       </motion.button>
 
@@ -29,7 +32,7 @@ export default function ScoreBoard({ compact = false }) {
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            className="absolute top-full right-0 mt-2 glass-panel p-3 sm:p-4 min-w-[180px] sm:min-w-[280px] z-50"
+            className="absolute top-full right-0 mt-2 glass-panel p-3 sm:p-4 min-w-[210px] sm:min-w-[280px] max-h-[60dvh] overflow-y-auto z-50"
             initial={{ opacity: 0, y: -10, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -10, scale: 0.95 }}
