@@ -1,5 +1,6 @@
-import { useMemo } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { useMemo, useState, useRef } from 'react'
+import { AnimatePresence } from 'framer-motion'
+import toast from 'react-hot-toast'
 import { useSocket } from '../../context/SocketContext'
 import { useGame } from '../../context/GameContext'
 import { useOrientation } from '../../hooks/useOrientation'
@@ -7,6 +8,7 @@ import Card from './Card'
 
 const SUIT_ORDER = { spades: 0, hearts: 1, diamonds: 2, clubs: 3 }
 const RANK_VALUES = { '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14 }
+const PLAY_CARD_ACK_TIMEOUT_MS = 7000
 
 function cardSortValue(card) {
   const suitVal = SUIT_ORDER[card.suit] ?? 4
@@ -15,10 +17,13 @@ function cardSortValue(card) {
 }
 
 export default function PlayerHand() {
-  const { socket } = useSocket()
+  const { socket, isConnected } = useSocket()
   const { state } = useGame()
   const { myHand, myTurn, playableCards, phase } = state
   const { width: windowWidth, isMobile, isLandscapeMobile } = useOrientation()
+  const [pendingCardKey, setPendingCardKey] = useState(null)
+  const pendingCardRef = useRef(null)
+  const pendingToastShownRef = useRef(false)
 
   const sortedHand = useMemo(() => {
     return [...myHand].sort((a, b) => cardSortValue(a) - cardSortValue(b))
@@ -28,9 +33,65 @@ export default function PlayerHand() {
     return new Set(playableCards.map((c) => `${c.suit}-${c.rank}`))
   }, [playableCards])
 
+  const hasPendingCardInHand = pendingCardKey
+    ? myHand.some((card) => `${card.suit}-${card.rank}` === pendingCardKey)
+    : false
+  const isActionLocked = Boolean(pendingCardKey && myTurn && phase === 'PLAYING' && hasPendingCardInHand)
+
   const handlePlayCard = (card) => {
-    if (!socket || !myTurn) return
-    socket.emit('play-card', { card: { suit: card.suit, rank: card.rank } })
+    if (!socket || !myTurn || phase !== 'PLAYING') return
+
+    const cardKey = `${card.suit}-${card.rank}`
+    if (!playableSet.has(cardKey)) return
+
+    if (!isConnected || !socket.connected) {
+      toast.error('Network reconnecting. Please wait a moment.')
+      return
+    }
+
+    // Unlock stale pending state if turn/hand changed before ack callback.
+    if (pendingCardRef.current) {
+      const stillPending = myTurn
+        && phase === 'PLAYING'
+        && myHand.some((handCard) => `${handCard.suit}-${handCard.rank}` === pendingCardRef.current)
+
+      if (!stillPending) {
+        pendingCardRef.current = null
+        setPendingCardKey(null)
+        pendingToastShownRef.current = false
+      }
+    }
+
+    // One in-flight play only, to prevent duplicate taps on slow networks.
+    if (pendingCardRef.current) {
+      if (!pendingToastShownRef.current) {
+        toast('Sending your move...')
+        pendingToastShownRef.current = true
+      }
+      return
+    }
+
+    pendingCardRef.current = cardKey
+    setPendingCardKey(cardKey)
+
+    socket.timeout(PLAY_CARD_ACK_TIMEOUT_MS).emit(
+      'play-card',
+      { card: { suit: card.suit, rank: card.rank } },
+      (err, response) => {
+        pendingCardRef.current = null
+        setPendingCardKey(null)
+        pendingToastShownRef.current = false
+
+        if (err) {
+          toast.error('Move timed out. Check internet and try again.')
+          return
+        }
+
+        if (response?.success === false) {
+          toast.error(response.error || 'Unable to play this card.')
+        }
+      }
+    )
   }
 
   const cardCount = sortedHand.length
@@ -78,8 +139,9 @@ export default function PlayerHand() {
         <AnimatePresence mode="popLayout">
           {sortedHand.map((card, index) => {
             const cardKey = `${card.suit}-${card.rank}`
-            const isPlayable = myTurn && phase === 'PLAYING' && playableSet.has(cardKey)
+            const isPlayable = myTurn && phase === 'PLAYING' && playableSet.has(cardKey) && !isActionLocked
             const isNotPlayableOnTurn = myTurn && phase === 'PLAYING' && !playableSet.has(cardKey)
+            const isPendingCard = pendingCardKey === cardKey
 
             // Fan positioning
             const mid = (cardCount - 1) / 2
@@ -94,7 +156,7 @@ export default function PlayerHand() {
                 layout
                 initial={{ opacity: 0, y: 60, scale: 0.6 }}
                 animate={{
-                  opacity: isNotPlayableOnTurn ? 0.5 : 1,
+                  opacity: isPendingCard ? 0.6 : isNotPlayableOnTurn ? 0.5 : 1,
                   y: 0,
                   scale: 1,
                   rotate: angle,

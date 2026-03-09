@@ -1,5 +1,48 @@
 package com.callgroup.app;
 
+import android.os.Bundle;
+import android.view.View;
+import android.view.Window;
+
+import androidx.core.content.ContextCompat;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+
 import com.getcapacitor.BridgeActivity;
 
-public class MainActivity extends BridgeActivity {}
+public class MainActivity extends BridgeActivity {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        Window window = getWindow();
+        window.setStatusBarColor(ContextCompat.getColor(this, R.color.colorPrimary));
+        window.setNavigationBarColor(ContextCompat.getColor(this, R.color.colorPrimaryDark));
+
+        // Keep content below Android system bars (status/navigation) across devices.
+        WindowCompat.setDecorFitsSystemWindows(window, true);
+
+        View content = window.getDecorView().findViewById(android.R.id.content);
+        if (content == null) return;
+        content.setBackgroundColor(ContextCompat.getColor(this, R.color.colorPrimaryDark));
+
+        final int baseLeft = content.getPaddingLeft();
+        final int baseTop = content.getPaddingTop();
+        final int baseRight = content.getPaddingRight();
+        final int baseBottom = content.getPaddingBottom();
+
+        ViewCompat.setOnApplyWindowInsetsListener(content, (view, insets) -> {
+            Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
+            view.setPadding(
+                baseLeft,
+                baseTop + systemBars.top,
+                baseRight,
+                baseBottom
+            );
+            return insets;
+        });
+        ViewCompat.requestApplyInsets(content);
+    }
+}

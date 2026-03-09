@@ -32,8 +32,11 @@ function App() {
       try {
         // Keep status bar visible and outside WebView content.
         await StatusBar.setOverlaysWebView({ overlay: false })
-        await StatusBar.setStyle({ style: Style.Dark })
+        await StatusBar.setStyle({ style: Style.Light })
+        await StatusBar.setBackgroundColor({ color: '#0A3622' })
         await StatusBar.show()
+        const themeMeta = document.querySelector('meta[name="theme-color"]')
+        if (themeMeta) themeMeta.setAttribute('content', '#0A3622')
         updateNativeStatusBarOffset()
         window.addEventListener('resize', updateNativeStatusBarOffset)
         window.addEventListener('orientationchange', updateNativeStatusBarOffset)

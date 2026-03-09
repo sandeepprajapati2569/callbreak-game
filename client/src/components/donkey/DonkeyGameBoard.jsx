@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { LogOut, Clock } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import toast from 'react-hot-toast'
 import { useGame } from '../../context/GameContext'
 import { useSocket } from '../../context/SocketContext'
 import { useVoiceChatContext } from '../../context/VoiceChatContext'
@@ -9,6 +10,7 @@ import VoiceChat from '../game/VoiceChat'
 import Card from '../game/Card'
 
 const DONKEY_WORD = 'DONKEY'
+const PICK_CARD_ACK_TIMEOUT_MS = 7000
 
 // Position maps for player stations (same as CallBreak GameBoard)
 const POSITION_MAPS = {
@@ -31,7 +33,7 @@ const POSITION_STYLES = {
 export default function DonkeyGameBoard() {
   const navigate = useNavigate()
   const { state, dispatch } = useGame()
-  const { socket, setPlayerId, setRoomCode } = useSocket()
+  const { socket, isConnected, setPlayerId, setRoomCode } = useSocket()
   const voiceChat = useVoiceChatContext()
   const [pickingDisabled, setPickingDisabled] = useState(false)
 
@@ -84,9 +86,25 @@ export default function DonkeyGameBoard() {
 
   const handlePickCard = useCallback((cardIndex) => {
     if (!isMyTurn || !socket || pickingDisabled) return
+    if (!isConnected || !socket.connected) {
+      toast.error('Network reconnecting. Please wait a moment.')
+      return
+    }
+
     setPickingDisabled(true)
-    socket.emit('donkey-pick-card', { cardIndex })
-  }, [isMyTurn, socket, pickingDisabled])
+    socket.timeout(PICK_CARD_ACK_TIMEOUT_MS).emit('donkey-pick-card', { cardIndex }, (err, response) => {
+      if (err) {
+        setPickingDisabled(false)
+        toast.error('Pick timed out. Check internet and try again.')
+        return
+      }
+
+      if (response?.success === false) {
+        setPickingDisabled(false)
+        toast.error(response.error || 'Unable to pick card.')
+      }
+    })
+  }, [isMyTurn, socket, pickingDisabled, isConnected])
 
   const handleLeaveRoom = useCallback(() => {
     if (socket) socket.emit('leave-room')

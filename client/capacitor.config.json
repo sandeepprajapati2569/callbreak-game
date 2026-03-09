@@ -3,6 +3,11 @@
   "appName": "Call Group",
   "webDir": "dist",
   "plugins": {
+    "StatusBar": {
+      "overlaysWebView": false,
+      "style": "LIGHT",
+      "backgroundColor": "#0A3622"
+    },
     "FirebaseAuthentication": {
       "skipNativeAuth": true,
       "providers": ["google.com"]
