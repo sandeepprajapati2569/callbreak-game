@@ -16,6 +16,7 @@ export default function VoiceChat({ voiceChat }) {
     speakingPeers,
     mutedPlayers,
     voicePeers,
+    joinVoice,
     toggleMute,
   } = voiceChat
 
@@ -29,8 +30,18 @@ export default function VoiceChat({ voiceChat }) {
     socket.emit('voice-mute-player', { targetId, muted: !isMutedByHost })
   }
 
-  // Don't render anything if not connected to voice yet
-  if (!isInVoice) return null
+  if (!isInVoice) {
+    return (
+      <motion.button
+        onClick={joinVoice}
+        className="p-1.5 sm:p-2 rounded-full bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/70 transition-all duration-200"
+        whileTap={{ scale: 0.85 }}
+        title="Join voice chat"
+      >
+        <Mic size={14} />
+      </motion.button>
+    )
+  }
 
   return (
     <div className="flex items-center gap-1.5">

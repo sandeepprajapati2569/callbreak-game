@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Trophy, ChevronDown, ChevronUp } from 'lucide-react'
 import { useGame } from '../../context/GameContext'
 
-export default function ScoreBoard() {
+export default function ScoreBoard({ compact = false }) {
   const [isOpen, setIsOpen] = useState(false)
   const { state } = useGame()
   const { players, bids, tricksWon, totalScores, currentRound, playerId } = state
@@ -13,11 +13,15 @@ export default function ScoreBoard() {
       {/* Toggle button */}
       <motion.button
         onClick={() => setIsOpen(!isOpen)}
-        className="glass-panel px-3 py-2 flex items-center gap-2 hover:bg-white/5 transition-colors"
+        className={`glass-panel flex items-center gap-1.5 hover:bg-white/5 transition-colors ${
+          compact ? 'px-2 py-1.5' : 'px-3 py-2'
+        }`}
         whileTap={{ scale: 0.95 }}
       >
-        <Trophy size={16} style={{ color: 'var(--gold)' }} />
-        <span className="text-xs uppercase tracking-wider opacity-60">Scores</span>
+        <Trophy size={compact ? 14 : 16} style={{ color: 'var(--gold)' }} />
+        {!compact && (
+          <span className="text-xs uppercase tracking-wider opacity-60">Scores</span>
+        )}
         {isOpen ? <ChevronUp size={14} className="opacity-40" /> : <ChevronDown size={14} className="opacity-40" />}
       </motion.button>
 

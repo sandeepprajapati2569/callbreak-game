@@ -15,7 +15,18 @@ import DonkeyGamePage from './pages/DonkeyGamePage'
 function App() {
   useEffect(() => {
     const isNativePlatform = Boolean(window?.Capacitor?.isNativePlatform?.())
-    if (!isNativePlatform) return
+    if (!isNativePlatform) {
+      document.documentElement.style.setProperty('--native-status-bar-offset', '0px')
+      return
+    }
+
+    const updateNativeStatusBarOffset = () => {
+      const isLandscape = window.innerWidth > window.innerHeight
+      document.documentElement.style.setProperty(
+        '--native-status-bar-offset',
+        isLandscape ? '10px' : '30px'
+      )
+    }
 
     const setupStatusBar = async () => {
       try {
@@ -23,12 +34,20 @@ function App() {
         await StatusBar.setOverlaysWebView({ overlay: false })
         await StatusBar.setStyle({ style: Style.Dark })
         await StatusBar.show()
+        updateNativeStatusBarOffset()
+        window.addEventListener('resize', updateNativeStatusBarOffset)
+        window.addEventListener('orientationchange', updateNativeStatusBarOffset)
       } catch (error) {
         console.error('Status bar setup failed:', error)
       }
     }
 
     setupStatusBar()
+
+    return () => {
+      window.removeEventListener('resize', updateNativeStatusBarOffset)
+      window.removeEventListener('orientationchange', updateNativeStatusBarOffset)
+    }
   }, [])
 
   return (

@@ -97,8 +97,12 @@ export default function DonkeyGameBoard() {
   }, [socket, dispatch, setPlayerId, setRoomCode, navigate])
 
   return (
-    <div className="fixed inset-0 flex flex-col"
-      style={{ background: 'radial-gradient(ellipse at center, #0e4a2e 0%, #0A3622 35%, #072818 70%, #051a10 100%)' }}
+    <div
+      className="fixed inset-0 flex flex-col"
+      style={{
+        paddingTop: 'env(safe-area-inset-top, 0px)',
+        background: 'radial-gradient(ellipse at center, #0e4a2e 0%, #0A3622 35%, #072818 70%, #051a10 100%)',
+      }}
     >
       {/* Top bar */}
       <div className="flex items-center justify-between px-3 py-2 z-20">

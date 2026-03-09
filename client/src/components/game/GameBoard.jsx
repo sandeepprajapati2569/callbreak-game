@@ -93,59 +93,51 @@ export default function GameBoard() {
   const opponents = positionedPlayers.filter((p) => p.position !== "bottom");
 
   return (
-    <div className="w-full h-full felt-bg relative flex items-center justify-center overflow-hidden">
-      {/* Top-left controls: exit, trump, mic */}
+    <div
+      className="w-full h-full felt-bg relative flex items-center justify-center overflow-hidden"
+      style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+    >
+      {/* Top HUD: aligned for native status bar + landscape */}
       <div
-        className={`absolute z-20 flex items-center gap-1.5 ${
-          isLandscapeMobile
-            ? "top-1.5 left-1.5"
-            : "top-2 left-2 sm:top-4 sm:left-4"
-        }`}
+        className="absolute left-0 right-0 z-20 px-2 sm:px-4"
+        style={{
+          top: "calc(env(safe-area-inset-top, 0px) + var(--native-status-bar-offset, 0px) + 2px)",
+        }}
       >
-        <motion.button
-          onClick={handleLeaveRoom}
-          className="glass-panel p-1.5 sm:p-2 text-red-400/60 hover:text-red-400 hover:bg-red-500/10 transition-all rounded-lg"
-          whileTap={{ scale: 0.9 }}
-          title="Leave game"
-        >
-          <LogOut size={14} />
-        </motion.button>
-        <div className="glass-panel p-1 sm:p-1.5 rounded-lg">
-          <VoiceChat voiceChat={voiceChat} />
+        <div className="grid grid-cols-[auto_1fr_auto] items-start gap-2">
+          <div className="justify-self-start flex items-center gap-1.5">
+            <motion.button
+              onClick={handleLeaveRoom}
+              className="glass-panel p-1.5 sm:p-2 text-red-400/60 hover:text-red-400 hover:bg-red-500/10 transition-all rounded-lg"
+              whileTap={{ scale: 0.9 }}
+              title="Leave game"
+            >
+              <LogOut size={14} />
+            </motion.button>
+            <div className="glass-panel p-1 sm:p-1.5 rounded-lg">
+              <VoiceChat voiceChat={voiceChat} />
+            </div>
+          </div>
+
+          <div className="justify-self-center glass-panel text-center px-2 py-0.5 sm:px-4 sm:py-1.5">
+            <span className="text-[10px] sm:text-xs uppercase tracking-wider opacity-50">
+              Round{" "}
+            </span>
+            <span className="text-gold font-bold text-xs sm:text-sm">
+              {currentRound || 1}
+            </span>
+            <span className="text-[10px] sm:text-xs uppercase tracking-wider opacity-50 ml-2 sm:ml-3">
+              Trick{" "}
+            </span>
+            <span className="text-gold font-bold text-xs sm:text-sm">
+              {(currentTrick || 0) + 1}
+            </span>
+          </div>
+
+          <div className="justify-self-end">
+            <ScoreBoard compact={isMobile || isLandscapeMobile} />
+          </div>
         </div>
-      </div>
-
-      {/* Round / Trick counter */}
-      <div
-        className={`absolute left-1/2 -translate-x-1/2 z-20 glass-panel text-center ${
-          isLandscapeMobile
-            ? "top-1.5 px-2 py-0.5"
-            : "top-2 px-3 py-1 sm:px-4 sm:py-2"
-        }`}
-      >
-        <span className="text-[10px] sm:text-xs uppercase tracking-wider opacity-50">
-          Round{" "}
-        </span>
-        <span className="text-gold font-bold text-xs sm:text-sm">
-          {currentRound || 1}
-        </span>
-        <span className="text-[10px] sm:text-xs uppercase tracking-wider opacity-50 ml-2 sm:ml-3">
-          Trick{" "}
-        </span>
-        <span className="text-gold font-bold text-xs sm:text-sm">
-          {(currentTrick || 0) + 1}
-        </span>
-      </div>
-
-      {/* ScoreBoard - top right */}
-      <div
-        className={`absolute z-20 ${
-          isLandscapeMobile
-            ? "top-1.5 right-1.5"
-            : "top-2 right-2 sm:top-4 sm:right-4"
-        }`}
-      >
-        <ScoreBoard />
       </div>
 
       {/* Opponent player stations - rendered dynamically */}
