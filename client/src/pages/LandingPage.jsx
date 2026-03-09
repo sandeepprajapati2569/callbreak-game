@@ -294,8 +294,8 @@ export default function LandingPage() {
           )}
         </AnimatePresence>
 
-        {/* Game Mode Tabs — Donkey mode hidden for now, uncomment when ready */}
-        {/* <motion.div
+        {/* Game Mode Tabs */}
+        <motion.div
           className="flex rounded-xl overflow-hidden border border-white/10"
           style={{ background: 'rgba(0,0,0,0.3)' }}
           initial={{ opacity: 0, y: 10 }}
@@ -330,9 +330,9 @@ export default function LandingPage() {
                 : {}
             }
           >
-            🫏 Donkey
+            🫏 Gadha Ladan
           </button>
-        </motion.div> */}
+        </motion.div>
 
         {/* Auth + Form */}
         <motion.div
