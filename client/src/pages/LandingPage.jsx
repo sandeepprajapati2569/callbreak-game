@@ -46,7 +46,7 @@ export default function LandingPage() {
     if (state.phase === 'BIDDING' || state.phase === 'PLAYING' || state.phase === 'GAME_STARTING' || state.phase === 'ROUND_END' || state.phase === 'GAME_OVER') {
       navigate('/game')
     }
-    if (state.phase === 'DONKEY_PLAYING' || state.phase === 'DONKEY_ROUND_RESULT') {
+    if (state.phase === 'DONKEY_PLAYING' || state.phase === 'DONKEY_GAME_OVER' || state.phase === 'DONKEY_ROUND_RESULT') {
       navigate('/donkey-game')
     }
   }, [state.phase, navigate])
@@ -275,7 +275,7 @@ export default function LandingPage() {
                     Game in Progress
                   </p>
                   <p className="text-xs opacity-60 mt-0.5">
-                    Room: {activeGame.roomCode} &middot; {activeGame.gameType === 'donkey' ? 'Donkey' : 'Call Break'}
+                    Room: {activeGame.roomCode} &middot; {activeGame.gameType === 'donkey' ? 'Gadha Ladan' : 'Call Break'}
                   </p>
                 </div>
                 <motion.button

@@ -34,7 +34,7 @@ export default function LobbyPage() {
     if (state.phase === 'GAME_STARTING' || state.phase === 'BIDDING' || state.phase === 'PLAYING') {
       navigate('/game')
     }
-    if (state.phase === 'DONKEY_PLAYING' || state.phase === 'DONKEY_ROUND_RESULT') {
+    if (state.phase === 'DONKEY_PLAYING' || state.phase === 'DONKEY_GAME_OVER' || state.phase === 'DONKEY_ROUND_RESULT') {
       navigate('/donkey-game')
     }
   }, [state.phase, navigate])
@@ -127,7 +127,7 @@ export default function LobbyPage() {
           {/* Room Code */}
           <div className="text-center">
             <p className="text-sm uppercase tracking-widest opacity-50 mb-1">
-              {state.gameType === 'donkey' ? '🫏 Donkey' : '♠ Call Break'} — Room Code
+              {state.gameType === 'donkey' ? '🫏 Gadha Ladan' : '♠ Call Break'} — Room Code
             </p>
             <div className="flex items-center gap-3">
               <motion.span

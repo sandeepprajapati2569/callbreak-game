@@ -35,15 +35,18 @@ const initialState = {
   // Donkey (Gadha Ladan) specific state
   donkeyPlayers: [],           // players with isActive, cardCount, seatIndex
   donkeyRound: 0,
+  donkeyTrickNumber: 1,
+  donkeyLeadSuit: null,
+  donkeyTrickCards: [],        // current trick cards on table
+  donkeyPlayableCards: [],     // cards I can legally play now
+  donkeyLastTrickResult: null, // latest resolved trick payload
   activePlayers: [],           // IDs of players still holding cards
   currentTurnPlayerId: null,   // whose turn it is to pick
   isMyTurn: false,
-  rightNeighborId: null,       // who I pick from when it's my turn
-  rightNeighborCardCount: 0,   // how many face-down cards they hold
   donkeyTurnTimerStart: null,
   donkeyTurnTimerDuration: 20000,
   donkeyTurnTimerPlayerId: null,
-  lastDiscardedSet: null,      // { playerId, playerName, rank }
+  lastDiscardedSet: null,
   donkeyRoundResult: null,
   donkeyGameResult: null,      // { donkeyPlayerId, donkeyPlayerName, players, round }
 }
@@ -267,32 +270,22 @@ function gameReducer(state, action) {
       return {
         ...state,
         phase: 'DONKEY_PLAYING',
-        myHand: action.payload.hand,
-        donkeyRound: action.payload.round,
+        myHand: action.payload.hand || [],
+        donkeyRound: action.payload.round || state.donkeyRound,
+        donkeyTrickNumber: 1,
+        donkeyLeadSuit: null,
+        donkeyTrickCards: [],
+        donkeyPlayableCards: [],
+        donkeyLastTrickResult: null,
         donkeyPlayers: action.payload.players || state.donkeyPlayers,
-        activePlayers: (action.payload.players || []).map((p) => p.id),
+        activePlayers: (action.payload.players || []).filter((p) => (p.cardCount || 0) > 0).map((p) => p.id),
         currentTurnPlayerId: null,
         isMyTurn: false,
-        rightNeighborId: null,
-        rightNeighborCardCount: 0,
+        donkeyTurnTimerStart: null,
+        donkeyTurnTimerPlayerId: null,
         lastDiscardedSet: null,
         donkeyRoundResult: null,
         donkeyGameResult: null,
-      }
-
-    case 'DONKEY_SET_DISCARDED':
-      return {
-        ...state,
-        lastDiscardedSet: {
-          playerId: action.payload.playerId,
-          playerName: action.payload.playerName,
-          rank: action.payload.rank,
-        },
-        donkeyPlayers: state.donkeyPlayers.map((p) =>
-          p.id === action.payload.playerId
-            ? { ...p, cardCount: action.payload.newCardCount }
-            : p
-        ),
       }
 
     case 'DONKEY_YOUR_TURN':
@@ -300,34 +293,51 @@ function gameReducer(state, action) {
         ...state,
         currentTurnPlayerId: action.payload.playerId,
         isMyTurn: true,
-        rightNeighborId: action.payload.rightNeighborId,
-        rightNeighborCardCount: action.payload.rightNeighborCardCount,
+        donkeyPlayableCards: action.payload.playableCards || [],
+        donkeyLeadSuit: action.payload.leadSuit ?? state.donkeyLeadSuit,
+        donkeyTrickNumber: action.payload.trickNumber || state.donkeyTrickNumber,
       }
 
     case 'DONKEY_TURN_CHANGED':
-      if (action.payload.playerId === state.playerId) return state
       return {
         ...state,
         currentTurnPlayerId: action.payload.playerId,
-        isMyTurn: false,
-        rightNeighborId: null,
-        rightNeighborCardCount: 0,
+        isMyTurn: action.payload.playerId === state.playerId ? state.isMyTurn : false,
+        donkeyPlayableCards: action.payload.playerId === state.playerId ? state.donkeyPlayableCards : [],
+        donkeyLeadSuit: action.payload.leadSuit ?? state.donkeyLeadSuit,
+        donkeyTrickNumber: action.payload.trickNumber || state.donkeyTrickNumber,
       }
 
-    case 'DONKEY_CARD_PICKED':
+    case 'DONKEY_CARD_PLAYED': {
+      const trickCards = [...state.donkeyTrickCards]
+      const alreadyPlayed = trickCards.some((entry) => entry.playerId === action.payload.playerId)
+      if (!alreadyPlayed && action.payload.card && action.payload.playerId) {
+        trickCards.push({
+          playerId: action.payload.playerId,
+          playerName: action.payload.playerName,
+          card: action.payload.card,
+        })
+      }
+
       return {
         ...state,
+        donkeyTrickCards: trickCards,
+        donkeyLeadSuit: action.payload.leadSuit ?? state.donkeyLeadSuit,
+        isMyTurn: action.payload.playerId === state.playerId ? false : state.isMyTurn,
+        donkeyPlayableCards: action.payload.playerId === state.playerId ? [] : state.donkeyPlayableCards,
         donkeyPlayers: state.donkeyPlayers.map((p) => {
-          if (p.id === action.payload.pickerId) return { ...p, cardCount: action.payload.pickerCardCount }
-          if (p.id === action.payload.fromId) return { ...p, cardCount: action.payload.fromCardCount }
+          if (p.id === action.payload.playerId && Number.isInteger(action.payload.remainingCards)) {
+            return { ...p, cardCount: action.payload.remainingCards }
+          }
           return p
         }),
       }
+    }
 
     case 'DONKEY_HAND_UPDATED':
       return {
         ...state,
-        myHand: action.payload.hand,
+        myHand: action.payload.hand || [],
       }
 
     case 'DONKEY_PLAYER_SAFE':
@@ -348,22 +358,38 @@ function gameReducer(state, action) {
       }
 
     case 'DONKEY_PLAYERS_UPDATE':
-      return {
-        ...state,
-        donkeyPlayers: action.payload.players || state.donkeyPlayers,
+      {
+        const players = action.payload.players || state.donkeyPlayers
+        const activePlayers = action.payload.activePlayers
+          || players.filter((p) => (p.cardCount || 0) > 0).map((p) => p.id)
+        return {
+          ...state,
+          donkeyPlayers: players,
+          activePlayers,
+        }
       }
 
-    case 'DONKEY_ROUND_RESULT':
+    case 'DONKEY_TRICK_RESULT':
       return {
         ...state,
-        phase: 'DONKEY_ROUND_RESULT',
-        donkeyRoundResult: action.payload,
-        donkeyPlayers: action.payload.players?.map((p) => ({
-          ...p,
-          isActive: true,
-        })) || state.donkeyPlayers,
-        isMyTurn: false,
+        donkeyTrickNumber: action.payload.trickNumber || state.donkeyTrickNumber,
+        donkeyLeadSuit: action.payload.leadSuit ?? state.donkeyLeadSuit,
+        donkeyTrickCards: action.payload.cards || state.donkeyTrickCards,
+        donkeyLastTrickResult: action.payload,
         currentTurnPlayerId: null,
+        isMyTurn: false,
+        donkeyPlayableCards: [],
+      }
+
+    case 'DONKEY_TRICK_CLEARED':
+      return {
+        ...state,
+        donkeyTrickCards: [],
+        donkeyLeadSuit: null,
+        donkeyTrickNumber: action.payload.trickNumber || state.donkeyTrickNumber,
+        currentTurnPlayerId: action.payload.nextPlayerId || state.currentTurnPlayerId,
+        isMyTurn: false,
+        donkeyPlayableCards: [],
       }
 
     case 'DONKEY_GAME_OVER':
@@ -372,8 +398,10 @@ function gameReducer(state, action) {
         phase: 'DONKEY_GAME_OVER',
         donkeyGameResult: action.payload,
         donkeyPlayers: action.payload.players || state.donkeyPlayers,
+        activePlayers: (action.payload.players || []).filter((p) => (p.cardCount || 0) > 0).map((p) => p.id),
         isMyTurn: false,
         currentTurnPlayerId: null,
+        donkeyPlayableCards: [],
       }
 
     case 'SET_GAME_TYPE':
@@ -415,6 +443,33 @@ function gameReducer(state, action) {
       // Use playerId from sync payload (set during reconnection), fall back to current state
       const syncedPlayerId = s.playerId || state.playerId
       const syncedGameType = s.gameType || state.gameType
+
+      if (syncedGameType === 'donkey' || String(s.phase || '').startsWith('DONKEY_')) {
+        const donkeyPlayers = s.donkeyPlayers || state.donkeyPlayers
+        const activePlayers = s.activePlayers
+          || donkeyPlayers.filter((p) => (p.cardCount || 0) > 0).map((p) => p.id)
+        const donkeyTrickCards = s.donkeyTrickCards || s.trickCards || []
+
+        return {
+          ...state,
+          phase: s.phase || state.phase,
+          playerId: syncedPlayerId,
+          gameType: 'donkey',
+          roomCode: s.roomCode || state.roomCode,
+          myHand: s.myHand || state.myHand,
+          donkeyPlayers,
+          activePlayers,
+          donkeyRound: s.donkeyRound || s.roundNumber || state.donkeyRound,
+          donkeyTrickNumber: s.donkeyTrickNumber || s.trickNumber || state.donkeyTrickNumber,
+          donkeyLeadSuit: s.donkeyLeadSuit ?? s.leadSuit ?? state.donkeyLeadSuit,
+          donkeyTrickCards,
+          currentTurnPlayerId: s.currentTurnPlayerId || null,
+          isMyTurn: s.currentTurnPlayerId === syncedPlayerId,
+          donkeyPlayableCards: s.playableCards || [],
+          donkeyTurnTimerStart: null,
+          donkeyTurnTimerPlayerId: null,
+        }
+      }
 
       // Find my player data from the server state
       const myPlayer = s.players?.find((p) => p.id === syncedPlayerId) || null
@@ -597,23 +652,18 @@ export function GameProvider({ children }) {
       'donkey-hand-dealt': (data) => {
         dispatch({ type: 'DONKEY_HAND_DEALT', payload: data })
       },
-      'donkey-set-discarded': (data) => {
-        dispatch({ type: 'DONKEY_SET_DISCARDED', payload: data })
-        if (data.playerName) {
-          toast(`${data.playerName} discarded four ${data.rank}s!`)
-        }
-      },
       'donkey-your-turn': (data) => {
         dispatch({ type: 'DONKEY_YOUR_TURN', payload: data })
       },
       'donkey-turn-changed': (data) => {
         dispatch({ type: 'DONKEY_TURN_CHANGED', payload: data })
       },
-      'donkey-card-picked': (data) => {
-        dispatch({ type: 'DONKEY_CARD_PICKED', payload: data })
+      'donkey-card-played': (data) => {
+        dispatch({ type: 'DONKEY_CARD_PLAYED', payload: data })
       },
-      'donkey-picked-card-reveal': (data) => {
-        // Card reveal handled via hand-updated
+      // Legacy fallback for old event name
+      'donkey-card-picked': (data) => {
+        dispatch({ type: 'DONKEY_CARD_PLAYED', payload: data })
       },
       'donkey-hand-updated': (data) => {
         dispatch({ type: 'DONKEY_HAND_UPDATED', payload: data })
@@ -630,8 +680,11 @@ export function GameProvider({ children }) {
       'donkey-players-update': (data) => {
         dispatch({ type: 'DONKEY_PLAYERS_UPDATE', payload: data })
       },
-      'donkey-round-result': (data) => {
-        dispatch({ type: 'DONKEY_ROUND_RESULT', payload: data })
+      'donkey-trick-result': (data) => {
+        dispatch({ type: 'DONKEY_TRICK_RESULT', payload: data })
+      },
+      'donkey-trick-cleared': (data) => {
+        dispatch({ type: 'DONKEY_TRICK_CLEARED', payload: data || {} })
       },
       'donkey-game-over': (data) => {
         dispatch({ type: 'DONKEY_GAME_OVER', payload: data })

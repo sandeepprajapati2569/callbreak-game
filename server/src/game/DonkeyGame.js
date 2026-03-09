@@ -1,36 +1,39 @@
 import { EventEmitter } from 'events';
 import { createDeck, shuffle, deal } from './Deck.js';
 
-const PICK_TIMEOUT_MS = 20_000; // 20 seconds to pick a card
+const TURN_TIMEOUT_MS = 20_000;
 
-/**
- * Finds a rank that has 4 or more cards in the hand.
- * @returns {string|null} The rank string, or null if none found.
- */
-function findFourOfAKind(hand) {
-  if (!hand || hand.length < 4) return null;
-  const counts = {};
-  for (const card of hand) {
-    counts[card.rank] = (counts[card.rank] || 0) + 1;
-  }
-  for (const [rank, count] of Object.entries(counts)) {
-    if (count >= 4) return rank;
-  }
-  return null;
+const SUIT_ORDER = {
+  spades: 0,
+  hearts: 1,
+  diamonds: 2,
+  clubs: 3,
+};
+
+function sameCard(a, b) {
+  if (!a || !b) return false;
+  return a.suit === b.suit && a.rank === b.rank;
+}
+
+function sortHandBySuitAndRank(hand) {
+  hand.sort((a, b) => {
+    const suitDiff = (SUIT_ORDER[a.suit] ?? 99) - (SUIT_ORDER[b.suit] ?? 99);
+    if (suitDiff !== 0) return suitDiff;
+    return (a.value || 0) - (b.value || 0);
+  });
 }
 
 /**
- * Gadha Ladan (Donkey) Game Engine
+ * Gadha Ladan (Indian trick-taking variant)
  *
- * Full 52-card deck dealt among 2-5 players. Players take turns picking a card
- * blindly from their right neighbor's hand. Any 4-of-a-kind formed is auto-discarded.
- * Last player holding cards at the end is the Gadha (Donkey) for that game.
+ * - Standard deck is dealt among players.
+ * - On each trick, players must follow lead suit if possible.
+ * - Highest card of lead suit determines trick leader.
+ * - If any off-suit card is played ("hit"), the highest lead-suit player collects
+ *   all trick cards and starts next trick.
+ * - Game ends when one (or fewer) players still hold cards; remaining player is donkey.
  */
 export default class DonkeyGame extends EventEmitter {
-  /**
-   * @param {string} roomCode
-   * @param {Array} players - Array of Player instances (2-5 players).
-   */
   constructor(roomCode, players) {
     super();
 
@@ -41,22 +44,29 @@ export default class DonkeyGame extends EventEmitter {
     this.roomCode = roomCode;
     this.numPlayers = players.length;
 
-    // Internal player state
-    this.players = players.map((p) => ({
-      id: p.id,
-      name: p.name,
-      seatIndex: p.seatIndex,
-      socketId: p.socketId,
-      hand: [],
-      letters: '',      // kept for backward UI compatibility
-      isActive: true,   // still in the current round (has cards)
-    }));
+    this.players = [...players]
+      .sort((a, b) => a.seatIndex - b.seatIndex)
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        seatIndex: p.seatIndex,
+        socketId: p.socketId,
+        hand: [],
+        letters: '', // kept for compatibility with older payloads/UI
+        isActive: true,
+      }));
 
     this.phase = 'WAITING'; // WAITING | PLAYING | GAME_OVER
-    this.roundNumber = 0;
-    this.currentTurnIndex = -1;  // index into this.players array
-    this.activePlayers = [];     // IDs of players still holding cards
-    this.roundLoserId = null;    // who lost previous round (starts next round)
+    this.roundNumber = 0; // one full match per round
+    this.trickNumber = 0;
+
+    this.currentTurnIndex = -1;
+    this.activePlayers = [];
+    this.trickOrder = [];
+    this.trickStarterId = null;
+    this.trickCards = [];
+    this.leadSuit = null;
+    this.lastCollectorId = null;
     this.turnTimer = null;
   }
 
@@ -69,118 +79,96 @@ export default class DonkeyGame extends EventEmitter {
     this._startNewRound();
   }
 
-  /**
-   * Player picks a card from their right neighbor's hand by index.
-   * @param {string} playerId - The picker's ID.
-   * @param {number} cardIndex - Index of the card in the right neighbor's hand.
-   */
-  pickCard(playerId, cardIndex) {
-    if (this.phase !== 'PLAYING') return;
-
-    // Validate it's this player's turn
-    const currentPlayer = this.players[this.currentTurnIndex];
-    if (!currentPlayer || currentPlayer.id !== playerId) return;
-    if (!currentPlayer.isActive) return;
-
-    // Find right neighbor
-    const rightNeighbor = this._getRightNeighbor(playerId);
-    if (!rightNeighbor || rightNeighbor.hand.length === 0) return;
-
-    // Validate card index
-    if (cardIndex < 0 || cardIndex >= rightNeighbor.hand.length) return;
-
-    // Clear turn timer
-    this._clearTurnTimer();
-
-    // Remove card from right neighbor's hand
-    const pickedCard = rightNeighbor.hand.splice(cardIndex, 1)[0];
-
-    // Add card to picker's hand
-    currentPlayer.hand.push(pickedCard);
-
-    // Broadcast pick info (don't reveal the card to others)
-    this.emit('donkey-card-picked', {
-      pickerId: currentPlayer.id,
-      pickerName: currentPlayer.name,
-      fromId: rightNeighbor.id,
-      fromName: rightNeighbor.name,
-      pickerCardCount: currentPlayer.hand.length,
-      fromCardCount: rightNeighbor.hand.length,
-    });
-
-    // Reveal the actual card only to the picker
-    this.emit('donkey-picked-card-reveal', {
-      playerId: currentPlayer.id,
-      card: pickedCard,
-    });
-
-    // Check for 4-of-a-kind in picker's hand and auto-discard
-    this._autoDiscardSets(currentPlayer);
-
-    // Send updated hands to both players
-    this.emit('donkey-hand-updated', {
-      playerId: currentPlayer.id,
-      hand: currentPlayer.hand,
-    });
-    this.emit('donkey-hand-updated', {
-      playerId: rightNeighbor.id,
-      hand: rightNeighbor.hand,
-    });
-
-    // Check if picker's hand is empty → safe
-    if (currentPlayer.hand.length === 0 && currentPlayer.isActive) {
-      currentPlayer.isActive = false;
-      this.activePlayers = this.activePlayers.filter((id) => id !== currentPlayer.id);
-      this.emit('donkey-player-safe', {
-        playerId: currentPlayer.id,
-        playerName: currentPlayer.name,
-      });
-    }
-
-    // Check if right neighbor's hand is empty → safe
-    if (rightNeighbor.hand.length === 0 && rightNeighbor.isActive) {
-      rightNeighbor.isActive = false;
-      this.activePlayers = this.activePlayers.filter((id) => id !== rightNeighbor.id);
-      this.emit('donkey-player-safe', {
-        playerId: rightNeighbor.id,
-        playerName: rightNeighbor.name,
-      });
-    }
-
-    // Broadcast updated player info
-    this._broadcastPlayerInfo();
-
-    // Check if round is over (1 or fewer active players)
-    if (this.activePlayers.length <= 1) {
-      const loserId = this._resolveRoundLoser(currentPlayer.id, rightNeighbor.id);
-      setTimeout(() => this._endRound(loserId), 1500);
-      return;
-    }
-
-    // Advance to next turn
-    this._advanceTurn();
-    this._emitTurnStart();
-    this._startTurnTimer();
-  }
-
-  // Trigger a new round (used as "play again" from game-over screen).
   triggerNextRound() {
     if (this.phase !== 'GAME_OVER') return;
     this._startNewRound();
   }
 
   /**
-   * Returns game state for a specific player (for reconnection).
+   * Legacy helper for old clients (index-based play payload).
    */
+  getCardByIndex(playerId, cardIndex) {
+    const player = this._getPlayer(playerId);
+    if (!player || cardIndex < 0 || cardIndex >= player.hand.length) return null;
+    return player.hand[cardIndex];
+  }
+
+  /**
+   * Returns playable cards for a player under follow-suit rule.
+   */
+  getPlayableCards(playerId) {
+    const player = this._getPlayer(playerId);
+    if (!player || player.hand.length === 0) return [];
+
+    if (!this.leadSuit) return [...player.hand];
+
+    const hasLeadSuit = player.hand.some((c) => c.suit === this.leadSuit);
+    if (!hasLeadSuit) return [...player.hand];
+    return player.hand.filter((c) => c.suit === this.leadSuit);
+  }
+
+  /**
+   * Player plays one card from hand.
+   * @param {string} playerId
+   * @param {{suit:string,rank:string,value:number}} card
+   */
+  playCard(playerId, card) {
+    if (this.phase !== 'PLAYING') return;
+
+    const current = this.players[this.currentTurnIndex];
+    if (!current || current.id !== playerId) return;
+    if (!current.isActive || current.hand.length === 0) return;
+
+    const playable = this.getPlayableCards(playerId);
+    if (!playable.some((c) => sameCard(c, card))) return;
+
+    const handIdx = current.hand.findIndex((c) => sameCard(c, card));
+    if (handIdx === -1) return;
+
+    this._clearTurnTimer();
+
+    const playedCard = current.hand.splice(handIdx, 1)[0];
+    if (!this.leadSuit) this.leadSuit = playedCard.suit;
+
+    this.trickCards.push({
+      playerId: current.id,
+      playerName: current.name,
+      seatIndex: current.seatIndex,
+      card: playedCard,
+    });
+
+    this.emit('donkey-card-played', {
+      playerId: current.id,
+      playerName: current.name,
+      card: playedCard,
+      leadSuit: this.leadSuit,
+      trickSize: this.trickCards.length,
+      trickExpected: this.trickOrder.length,
+      remainingCards: current.hand.length,
+    });
+
+    this.emit('donkey-hand-updated', {
+      playerId: current.id,
+      hand: current.hand,
+    });
+
+    this._broadcastPlayerInfo();
+
+    if (this.trickCards.length >= this.trickOrder.length) {
+      setTimeout(() => this._resolveTrick(), 650);
+      return;
+    }
+
+    this._advanceTurnWithinTrick();
+    this._emitTurnStart();
+    this._startTurnTimer();
+  }
+
   getStateForPlayer(playerId) {
     const player = this._getPlayer(playerId);
     const currentTurnPlayer = this.currentTurnIndex >= 0
-      ? this.players[this.currentTurnIndex] : null;
-
-    let rightNeighbor = null;
-    if (player && this.phase === 'PLAYING' && player.isActive) {
-      rightNeighbor = this._getRightNeighbor(playerId);
-    }
+      ? this.players[this.currentTurnIndex]
+      : null;
 
     return {
       gameType: 'donkey',
@@ -188,14 +176,23 @@ export default class DonkeyGame extends EventEmitter {
         this.phase === 'PLAYING'
           ? 'DONKEY_PLAYING'
           : this.phase === 'GAME_OVER'
-              ? 'DONKEY_GAME_OVER'
-              : 'DONKEY_WAITING',
+            ? 'DONKEY_GAME_OVER'
+            : 'DONKEY_WAITING',
       roundNumber: this.roundNumber,
+      trickNumber: this.trickNumber,
+      leadSuit: this.leadSuit,
+      trickCards: this.trickCards.map((c) => ({
+        playerId: c.playerId,
+        playerName: c.playerName,
+        seatIndex: c.seatIndex,
+        card: c.card,
+      })),
       myHand: player?.hand || [],
       currentTurnPlayerId: currentTurnPlayer?.id || null,
       isMyTurn: currentTurnPlayer?.id === playerId,
-      rightNeighborId: rightNeighbor?.id || null,
-      rightNeighborCardCount: rightNeighbor?.hand.length || 0,
+      playableCards: currentTurnPlayer?.id === playerId
+        ? this.getPlayableCards(playerId)
+        : [],
       activePlayers: [...this.activePlayers],
       donkeyPlayers: this.players.map((p) => ({
         id: p.id,
@@ -206,6 +203,14 @@ export default class DonkeyGame extends EventEmitter {
         cardCount: p.hand.length,
       })),
       donkeyRound: this.roundNumber,
+      donkeyTrickNumber: this.trickNumber,
+      donkeyLeadSuit: this.leadSuit,
+      donkeyTrickCards: this.trickCards.map((c) => ({
+        playerId: c.playerId,
+        playerName: c.playerName,
+        seatIndex: c.seatIndex,
+        card: c.card,
+      })),
     };
   }
 
@@ -220,34 +225,36 @@ export default class DonkeyGame extends EventEmitter {
   }
 
   // ---------------------------------------------------------------------------
-  // Private — round management
+  // Round and trick flow
   // ---------------------------------------------------------------------------
 
   _startNewRound() {
     this.roundNumber++;
+    this.trickNumber = 0;
     this.phase = 'WAITING';
     this._clearTurnTimer();
-    this.currentTurnIndex = -1;
 
-    // Reset per-round state for all players
+    this.currentTurnIndex = -1;
+    this.trickOrder = [];
+    this.trickStarterId = null;
+    this.trickCards = [];
+    this.leadSuit = null;
+    this.lastCollectorId = null;
+
     this.players.forEach((p) => {
       p.hand = [];
       p.isActive = true;
     });
 
-    // All players participate every round
-    this.activePlayers = this.players.map((p) => p.id);
-
-    // Create full 52-card deck, shuffle, and deal
     const deck = shuffle(createDeck());
     const hands = deal(deck, this.numPlayers);
-
-    // Assign hands
     this.players.forEach((player, idx) => {
-      player.hand = hands[idx];
+      player.hand = hands[idx] || [];
+      sortHandBySuitAndRank(player.hand);
     });
 
-    // Build player info for broadcast
+    this._refreshActivePlayers(false);
+
     const playersInfo = this.players.map((p) => ({
       id: p.id,
       name: p.name,
@@ -257,7 +264,6 @@ export default class DonkeyGame extends EventEmitter {
       cardCount: p.hand.length,
     }));
 
-    // Emit hand to each player individually
     this.players.forEach((player) => {
       this.emit('donkey-hand-dealt', {
         playerId: player.id,
@@ -267,123 +273,152 @@ export default class DonkeyGame extends EventEmitter {
       });
     });
 
-    // Auto-discard initial 4-of-a-kind sets after a brief delay
-    setTimeout(() => this._processInitialDiscards(), 1500);
-  }
-
-  _processInitialDiscards() {
-    // For each player, discard any 4-of-a-kind sets they were dealt
-    this.players.forEach((player) => {
-      this._autoDiscardSets(player);
-    });
-
-    // Check if any player's hand is now empty after initial discards
-    this.players.forEach((player) => {
-      if (player.hand.length === 0 && player.isActive) {
-        player.isActive = false;
-        this.activePlayers = this.activePlayers.filter((id) => id !== player.id);
-        this.emit('donkey-player-safe', {
-          playerId: player.id,
-          playerName: player.name,
-        });
-      }
-    });
-
-    // Send updated hands to each player
-    this.players.forEach((player) => {
-      this.emit('donkey-hand-updated', {
-        playerId: player.id,
-        hand: player.hand,
-      });
-    });
-
-    // Broadcast updated player info
     this._broadcastPlayerInfo();
 
-    // Check if round already over after initial discards
+    setTimeout(() => {
+      if (this.phase !== 'WAITING') return;
+      const starterId = this._findOpeningStarterId();
+      this.trickNumber = 1;
+      this.phase = 'PLAYING';
+      this._startTrick(starterId);
+    }, 900);
+  }
+
+  _startTrick(starterId) {
+    this._refreshActivePlayers(true);
     if (this.activePlayers.length <= 1) {
-      const loserId = this._resolveRoundLoser();
-      setTimeout(() => this._endRound(loserId), 1500);
+      this._endGame(this._resolveLoserAfterTrick(starterId));
       return;
     }
 
-    // Determine first turn
-    this.phase = 'PLAYING';
-    this._setFirstTurn();
+    this.trickCards = [];
+    this.leadSuit = null;
+
+    this.trickOrder = this._getActivePlayerIdsClockwiseFrom(starterId);
+    if (this.trickOrder.length === 0) {
+      this._endGame(this._resolveLoserAfterTrick(starterId));
+      return;
+    }
+
+    this.trickStarterId = this.trickOrder[0];
+    this.currentTurnIndex = this.players.findIndex((p) => p.id === this.trickStarterId);
+
+    const starter = this._getPlayer(this.trickStarterId);
+    this.emit('donkey-trick-cleared', {
+      trickNumber: this.trickNumber,
+      nextPlayerId: this.trickStarterId,
+      nextPlayerName: starter?.name,
+      leadSuit: null,
+    });
+
     this._emitTurnStart();
     this._startTurnTimer();
   }
 
-  /**
-   * Auto-discard all 4-of-a-kind sets from a player's hand.
-   */
-  _autoDiscardSets(player) {
-    let rank;
-    while ((rank = findFourOfAKind(player.hand)) !== null) {
-      // Remove all 4 cards of that rank
-      player.hand = player.hand.filter((c) => c.rank !== rank);
+  _resolveTrick() {
+    if (this.phase !== 'PLAYING' || this.trickCards.length === 0) return;
+    this._clearTurnTimer();
 
-      this.emit('donkey-set-discarded', {
-        playerId: player.id,
-        playerName: player.name,
-        rank,
-        newCardCount: player.hand.length,
-      });
-    }
-  }
+    const leadSuit = this.leadSuit;
+    const leadCards = this.trickCards.filter((entry) => entry.card.suit === leadSuit);
+    const comparableCards = leadCards.length > 0 ? leadCards : this.trickCards;
 
-  _setFirstTurn() {
-    const activeSorted = this._getActivePlayersSorted();
-    if (activeSorted.length === 0) return;
-
-    if (this.roundLoserId) {
-      // Round loser from previous round starts
-      const loserIdx = activeSorted.findIndex((p) => p.id === this.roundLoserId);
-      if (loserIdx >= 0) {
-        this.currentTurnIndex = this.players.findIndex((p) => p.id === activeSorted[loserIdx].id);
-        return;
+    let highestLead = comparableCards[0];
+    for (let i = 1; i < comparableCards.length; i++) {
+      if ((comparableCards[i].card.value || 0) > (highestLead.card.value || 0)) {
+        highestLead = comparableCards[i];
       }
     }
 
-    // Default: first active player by seatIndex
-    this.currentTurnIndex = this.players.findIndex((p) => p.id === activeSorted[0].id);
-  }
+    const wasHit = this.trickCards.some((entry) => entry.card.suit !== leadSuit);
+    const collectorId = highestLead.playerId;
+    const collector = this._getPlayer(collectorId);
 
-  _advanceTurn() {
-    const activeSorted = this._getActivePlayersSorted();
-    if (activeSorted.length <= 1) return;
+    if (wasHit && collector) {
+      collector.hand.push(...this.trickCards.map((entry) => entry.card));
+      sortHandBySuitAndRank(collector.hand);
+      this.lastCollectorId = collectorId;
+      this.emit('donkey-hand-updated', {
+        playerId: collector.id,
+        hand: collector.hand,
+      });
+    }
 
-    const currentId = this.players[this.currentTurnIndex]?.id;
-    const activeIdx = activeSorted.findIndex((p) => p.id === currentId);
+    this._refreshActivePlayers(true);
+    this._broadcastPlayerInfo();
 
-    // Move to next active player clockwise
-    const nextActiveIdx = (activeIdx + 1) % activeSorted.length;
-    const nextPlayer = activeSorted[nextActiveIdx];
+    this.emit('donkey-trick-result', {
+      trickNumber: this.trickNumber,
+      leadSuit,
+      wasHit,
+      highestPlayerId: highestLead.playerId,
+      highestPlayerName: highestLead.playerName,
+      highestCard: highestLead.card,
+      collectorId: wasHit ? collectorId : null,
+      collectorName: wasHit ? collector?.name : null,
+      collectedCount: wasHit ? this.trickCards.length : 0,
+      cards: this.trickCards.map((entry) => ({
+        playerId: entry.playerId,
+        playerName: entry.playerName,
+        seatIndex: entry.seatIndex,
+        card: entry.card,
+      })),
+      nextStarterId: collectorId,
+    });
 
-    this.currentTurnIndex = this.players.findIndex((p) => p.id === nextPlayer.id);
+    if (this.activePlayers.length <= 1) {
+      setTimeout(() => this._endGame(this._resolveLoserAfterTrick(collectorId)), 900);
+      return;
+    }
+
+    this.trickNumber++;
+    setTimeout(() => {
+      if (this.phase !== 'PLAYING') return;
+      this._startTrick(collectorId);
+    }, 1200);
   }
 
   _emitTurnStart() {
     const current = this.players[this.currentTurnIndex];
     if (!current) return;
 
-    const rightNeighbor = this._getRightNeighbor(current.id);
-    if (!rightNeighbor) return;
+    const playableCards = this.getPlayableCards(current.id);
 
-    // Individual event to current player — includes right neighbor info for picking UI
     this.emit('donkey-your-turn', {
       playerId: current.id,
-      rightNeighborId: rightNeighbor.id,
-      rightNeighborName: rightNeighbor.name,
-      rightNeighborCardCount: rightNeighbor.hand.length,
+      playerName: current.name,
+      seatIndex: current.seatIndex,
+      leadSuit: this.leadSuit,
+      trickNumber: this.trickNumber,
+      playableCards,
     });
 
-    // Broadcast event — tells everyone whose turn it is
     this.emit('donkey-turn-changed', {
       playerId: current.id,
       playerName: current.name,
       seatIndex: current.seatIndex,
+      leadSuit: this.leadSuit,
+      trickNumber: this.trickNumber,
     });
+  }
+
+  _advanceTurnWithinTrick() {
+    if (this.trickOrder.length <= 1) return;
+
+    const currentId = this.players[this.currentTurnIndex]?.id;
+    if (!currentId) return;
+
+    const alreadyPlayed = new Set(this.trickCards.map((c) => c.playerId));
+    const idx = this.trickOrder.indexOf(currentId);
+    if (idx === -1) return;
+
+    for (let offset = 1; offset <= this.trickOrder.length; offset++) {
+      const nextId = this.trickOrder[(idx + offset) % this.trickOrder.length];
+      if (!alreadyPlayed.has(nextId)) {
+        this.currentTurnIndex = this.players.findIndex((p) => p.id === nextId);
+        return;
+      }
+    }
   }
 
   _startTurnTimer() {
@@ -394,24 +429,45 @@ export default class DonkeyGame extends EventEmitter {
 
     this.emit('donkey-turn-timer-start', {
       playerId: current.id,
-      duration: PICK_TIMEOUT_MS,
+      duration: TURN_TIMEOUT_MS,
     });
 
+    const currentTurnPlayerId = current.id;
     this.turnTimer = setTimeout(() => {
-      // Auto-pick a random card from right neighbor
-      const rightNeighbor = this._getRightNeighbor(current.id);
-      if (rightNeighbor && rightNeighbor.hand.length > 0) {
-        const randomIdx = Math.floor(Math.random() * rightNeighbor.hand.length);
-        this.pickCard(current.id, randomIdx);
-      }
-    }, PICK_TIMEOUT_MS);
+      if (this.phase !== 'PLAYING') return;
+      const stillCurrent = this.players[this.currentTurnIndex];
+      if (!stillCurrent || stillCurrent.id !== currentTurnPlayerId) return;
+
+      const playable = this.getPlayableCards(currentTurnPlayerId);
+      if (playable.length === 0) return;
+      const randomCard = playable[Math.floor(Math.random() * playable.length)];
+      this.playCard(currentTurnPlayerId, randomCard);
+    }, TURN_TIMEOUT_MS);
   }
 
   _clearTurnTimer() {
-    if (this.turnTimer) {
-      clearTimeout(this.turnTimer);
-      this.turnTimer = null;
-    }
+    if (!this.turnTimer) return;
+    clearTimeout(this.turnTimer);
+    this.turnTimer = null;
+  }
+
+  _refreshActivePlayers(emitSafeEvents) {
+    const nextActive = [];
+    this.players.forEach((player) => {
+      const wasActive = player.isActive;
+      const nowActive = player.hand.length > 0;
+      player.isActive = nowActive;
+
+      if (nowActive) {
+        nextActive.push(player.id);
+      } else if (emitSafeEvents && wasActive) {
+        this.emit('donkey-player-safe', {
+          playerId: player.id,
+          playerName: player.name,
+        });
+      }
+    });
+    this.activePlayers = nextActive;
   }
 
   _broadcastPlayerInfo() {
@@ -424,28 +480,60 @@ export default class DonkeyGame extends EventEmitter {
         seatIndex: p.seatIndex,
         cardCount: p.hand.length,
       })),
+      activePlayers: [...this.activePlayers],
     });
   }
 
-  _endRound(loserId) {
-    this.phase = 'GAME_OVER';
-    this._clearTurnTimer();
+  _findOpeningStarterId() {
+    const aceOwner = this.players.find((player) =>
+      player.hand.some((card) => card.suit === 'spades' && card.rank === 'A')
+    );
+    if (aceOwner?.id) return aceOwner.id;
 
-    this.roundLoserId = loserId;
-    // Indian Gadha-Ladan style: this round's last card-holder is the donkey.
-    setTimeout(() => this._endGame(loserId), 900);
+    if (this.lastCollectorId && this.activePlayers.includes(this.lastCollectorId)) {
+      return this.lastCollectorId;
+    }
+
+    return this._getActivePlayersSorted()[0]?.id || this.players[0]?.id || null;
+  }
+
+  _resolveLoserAfterTrick(primaryFallbackId = null) {
+    if (this.activePlayers.length === 1) return this.activePlayers[0];
+
+    let maxCards = -1;
+    let candidates = [];
+    for (const player of this.players) {
+      const cardCount = player.hand.length;
+      if (cardCount > maxCards) {
+        maxCards = cardCount;
+        candidates = [player];
+      } else if (cardCount === maxCards) {
+        candidates.push(player);
+      }
+    }
+
+    if (maxCards > 0 && candidates.length > 0) {
+      candidates.sort((a, b) => a.seatIndex - b.seatIndex);
+      return candidates[0].id;
+    }
+
+    if (primaryFallbackId) return primaryFallbackId;
+    if (this.lastCollectorId) return this.lastCollectorId;
+    return this.players[0]?.id || null;
   }
 
   _endGame(donkeyPlayerId) {
     this.phase = 'GAME_OVER';
     this._clearTurnTimer();
 
-    const donkeyPlayer = this._getPlayer(donkeyPlayerId);
+    const resolvedDonkeyId = donkeyPlayerId || this._resolveLoserAfterTrick();
+    const donkeyPlayer = this._getPlayer(resolvedDonkeyId);
 
     this.emit('donkey-game-over', {
-      donkeyPlayerId,
+      donkeyPlayerId: resolvedDonkeyId,
       donkeyPlayerName: donkeyPlayer?.name,
       round: this.roundNumber,
+      trickNumber: this.trickNumber,
       players: this.players.map((p) => ({
         id: p.id,
         name: p.name,
@@ -464,60 +552,25 @@ export default class DonkeyGame extends EventEmitter {
     return this.players.find((p) => p.id === id);
   }
 
-  /**
-   * Determine round loser robustly, even in rare edge-cases where all players
-   * become empty at the same time after one pick.
-   */
-  _resolveRoundLoser(primaryFallbackId = null, secondaryFallbackId = null) {
-    if (this.activePlayers.length === 1) {
-      return this.activePlayers[0];
-    }
-
-    let maxCards = -1;
-    let candidates = [];
-    for (const player of this.players) {
-      if (player.hand.length > maxCards) {
-        maxCards = player.hand.length;
-        candidates = [player];
-      } else if (player.hand.length === maxCards) {
-        candidates.push(player);
-      }
-    }
-
-    if (maxCards > 0 && candidates.length > 0) {
-      candidates.sort((a, b) => a.seatIndex - b.seatIndex);
-      return candidates[0].id;
-    }
-
-    if (primaryFallbackId) return primaryFallbackId;
-    if (secondaryFallbackId) return secondaryFallbackId;
-    return this.players[0]?.id || null;
-  }
-
-  /**
-   * Get active players sorted by seatIndex (clockwise order).
-   */
   _getActivePlayersSorted() {
     return this.players
       .filter((p) => p.isActive)
       .sort((a, b) => a.seatIndex - b.seatIndex);
   }
 
-  /**
-   * Find the right neighbor of a player among active players.
-   * "Right" = previous player in clockwise seatIndex order (counter-clockwise).
-   */
-  _getRightNeighbor(playerId) {
-    const activeSorted = this._getActivePlayersSorted();
-    if (activeSorted.length < 2) return null;
+  _getActivePlayerIdsClockwiseFrom(startPlayerId) {
+    const active = this._getActivePlayersSorted();
+    if (active.length === 0) return [];
 
-    const myIdx = activeSorted.findIndex((p) => p.id === playerId);
-    if (myIdx === -1) return null;
+    const startIdx = active.findIndex((p) => p.id === startPlayerId);
+    const first = startIdx >= 0 ? startIdx : 0;
 
-    // Right neighbor = previous in clockwise = (myIdx - 1 + len) % len
-    const rightIdx = (myIdx - 1 + activeSorted.length) % activeSorted.length;
-    return activeSorted[rightIdx];
+    const order = [];
+    for (let i = 0; i < active.length; i++) {
+      order.push(active[(first + i) % active.length].id);
+    }
+    return order;
   }
 }
 
-export { PICK_TIMEOUT_MS };
+export { TURN_TIMEOUT_MS };

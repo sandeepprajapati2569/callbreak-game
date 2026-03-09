@@ -244,12 +244,7 @@ function wireDonkeyGameEvents(io, game, room) {
     }
   });
 
-  // Broadcast: a 4-of-a-kind set was discarded
-  game.on('donkey-set-discarded', (data) => {
-    io.to(room.code).emit('donkey-set-discarded', data);
-  });
-
-  // Individual: it's your turn (includes right neighbor info)
+  // Individual: it's your turn
   game.on('donkey-your-turn', ({ playerId, ...rest }) => {
     const player = room.getPlayer(playerId);
     if (player && player.socketId) {
@@ -262,20 +257,12 @@ function wireDonkeyGameEvents(io, game, room) {
     io.to(room.code).emit('donkey-turn-changed', data);
   });
 
-  // Broadcast: a card was picked (no card content revealed)
-  game.on('donkey-card-picked', (data) => {
-    io.to(room.code).emit('donkey-card-picked', data);
+  // Broadcast: card played into current trick
+  game.on('donkey-card-played', (data) => {
+    io.to(room.code).emit('donkey-card-played', data);
   });
 
-  // Individual: reveal the picked card only to the picker
-  game.on('donkey-picked-card-reveal', ({ playerId, card }) => {
-    const player = room.getPlayer(playerId);
-    if (player && player.socketId) {
-      io.to(player.socketId).emit('donkey-picked-card-reveal', { card });
-    }
-  });
-
-  // Individual: updated hand after pick/discard
+  // Individual: updated hand after card play / collection
   game.on('donkey-hand-updated', ({ playerId, hand }) => {
     const player = room.getPlayer(playerId);
     if (player && player.socketId) {
@@ -298,9 +285,14 @@ function wireDonkeyGameEvents(io, game, room) {
     io.to(room.code).emit('donkey-players-update', data);
   });
 
-  // Broadcast: round result
-  game.on('donkey-round-result', (data) => {
-    io.to(room.code).emit('donkey-round-result', data);
+  // Broadcast: trick resolution (winner / hit / collector)
+  game.on('donkey-trick-result', (data) => {
+    io.to(room.code).emit('donkey-trick-result', data);
+  });
+
+  // Broadcast: trick table cleared and next trick starts
+  game.on('donkey-trick-cleared', (data) => {
+    io.to(room.code).emit('donkey-trick-cleared', data);
   });
 
   // Broadcast: game over
@@ -754,14 +746,23 @@ export default function registerHandlers(io, socket, rooms, games) {
       }
       socket.emit('game-state-sync', { ...state, playerId, gameType: room.gameType });
 
-      // If it's this player's turn, re-send your-turn with playable cards
+      // If it's this player's turn, re-send turn payload with playable cards
       if (state.currentTurnPlayerId === playerId && game.getPlayableCards) {
         const playableCards = game.getPlayableCards(playerId);
-        socket.emit('your-turn', {
-          playerId,
-          playableCards: playableCards || [],
-          phase: state.phase,
-        });
+        if (room.gameType === 'donkey') {
+          socket.emit('donkey-your-turn', {
+            playerId,
+            playableCards: playableCards || [],
+            leadSuit: state.leadSuit || state.donkeyLeadSuit || null,
+            trickNumber: state.trickNumber || state.donkeyTrickNumber || 1,
+          });
+        } else {
+          socket.emit('your-turn', {
+            playerId,
+            playableCards: playableCards || [],
+            phase: state.phase,
+          });
+        }
       }
     } else {
       if (typeof callback === 'function') {
@@ -846,9 +847,9 @@ export default function registerHandlers(io, socket, rooms, games) {
   });
 
   // -------------------------------------------------------------------------
-  // donkey-pick-card (pick a card from right neighbor's hand)
+  // donkey-play-card (Indian trick-taking play)
   // -------------------------------------------------------------------------
-  socket.on('donkey-pick-card', ({ cardIndex }, callback) => {
+  const handleDonkeyPlayCard = ({ card, cardIndex }, callback) => {
     const { playerId, roomCode } = socket.data || {};
     const game = games.get(roomCode);
 
@@ -858,12 +859,27 @@ export default function registerHandlers(io, socket, rooms, games) {
     }
 
     try {
-      game.pickCard(playerId, cardIndex);
+      let cardToPlay = card;
+      // Backward compatibility for index-based payload
+      if (!cardToPlay && Number.isInteger(cardIndex) && typeof game.getCardByIndex === 'function') {
+        cardToPlay = game.getCardByIndex(playerId, cardIndex);
+      }
+
+      if (!cardToPlay) {
+        if (typeof callback === 'function') callback({ success: false, error: 'Card is required' });
+        return;
+      }
+
+      game.playCard(playerId, cardToPlay);
       if (typeof callback === 'function') callback({ success: true });
     } catch (err) {
       if (typeof callback === 'function') callback({ success: false, error: err.message });
     }
-  });
+  };
+
+  socket.on('donkey-play-card', handleDonkeyPlayCard);
+  // Legacy alias for older APKs
+  socket.on('donkey-pick-card', handleDonkeyPlayCard);
 
   // -------------------------------------------------------------------------
   // donkey-next-round
