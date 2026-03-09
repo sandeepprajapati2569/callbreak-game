@@ -11,9 +11,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['logo.svg', 'icons/*.png'],
       manifest: {
-        name: 'Call Group - Trick-Taking Card Game',
-        short_name: 'Call Group',
-        description: 'Play the classic trick-taking card game online with friends.',
+        name: 'Card Trap - Call Break and Gadha Ladan',
+        short_name: 'Card Trap',
+        description: 'Play Call Break and Gadha Ladan online with friends.',
         start_url: '/',
         display: 'fullscreen',
         orientation: 'any',

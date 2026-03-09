@@ -1,2 +1,2 @@
-export const APP_NAME = 'CALL GROUP'
-export const APP_TAGLINE = 'The Classic Trick-Taking Card Game'
+export const APP_NAME = 'CARD TRAP'
+export const APP_TAGLINE = 'Play Call Break and Gadha Ladan online'

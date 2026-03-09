@@ -1,6 +1,6 @@
 {
   "appId": "com.callgroup.app",
-  "appName": "Call Group",
+  "appName": "Card Trap",
   "webDir": "dist",
   "plugins": {
     "StatusBar": {

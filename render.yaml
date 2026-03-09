@@ -10,4 +10,4 @@ services:
       - key: NODE_ENV
         value: production
       - key: CLIENT_ORIGIN
-        value: https://client-sable-delta-40.vercel.app
+        value: https://cardtrap.com,https://www.cardtrap.com,https://client-sable-delta-40.vercel.app

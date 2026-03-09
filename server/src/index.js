@@ -6,6 +6,7 @@ import registerHandlers from './socket/handlers.js';
 
 const PORT = process.env.PORT || 3001;
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || '';
+const CARDTRAP_ORIGINS = ['https://cardtrap.com', 'https://www.cardtrap.com'];
 
 // Build allowed origins list — always include localhost for dev
 const ALLOWED_ORIGINS = [
@@ -14,6 +15,7 @@ const ALLOWED_ORIGINS = [
   'http://localhost',
   'capacitor://localhost',
   'ionic://localhost',
+  ...CARDTRAP_ORIGINS,
   ...CLIENT_ORIGIN.split(',').map(s => s.trim()).filter(Boolean),
 ];
 
@@ -49,7 +51,7 @@ app.use(express.json());
 app.get('/', (_req, res) => {
   res.json({
     status: 'ok',
-    game: 'Call Break',
+    game: 'Card Trap',
     uptime: process.uptime(),
     rooms: rooms.size,
     games: games.size,
@@ -81,7 +83,7 @@ io.on('connection', (socket) => {
 // ---------------------------------------------------------------------------
 if (!process.env.VERCEL) {
   httpServer.listen(PORT, () => {
-    console.log(`Call Break server running on port ${PORT}`);
+    console.log(`Card Trap server running on port ${PORT}`);
     console.log(`Accepting connections from: ${CLIENT_ORIGIN}`);
   });
 }
