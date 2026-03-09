@@ -598,8 +598,12 @@ export default function registerHandlers(io, socket, rooms, games) {
     if (room.players.length === 0) {
       const game = games.get(roomCode);
       if (game) {
-        game._clearTurnTimer();
-        game.removeAllListeners();
+        if (typeof game.destroy === 'function') {
+          game.destroy();
+        } else {
+          game._clearTurnTimer?.();
+          game.removeAllListeners?.();
+        }
         games.delete(roomCode);
       }
       rooms.delete(roomCode);
@@ -972,8 +976,12 @@ export default function registerHandlers(io, socket, rooms, games) {
           // Clean up game timers
           const game = games.get(roomCode);
           if (game) {
-            game._clearTurnTimer();
-            game.removeAllListeners();
+            if (typeof game.destroy === 'function') {
+              game.destroy();
+            } else {
+              game._clearTurnTimer?.();
+              game.removeAllListeners?.();
+            }
             games.delete(roomCode);
           }
 

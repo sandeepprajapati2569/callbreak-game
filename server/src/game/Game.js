@@ -299,6 +299,19 @@ export default class Game extends EventEmitter {
     );
   }
 
+  /**
+   * Fully disposes timers/listeners for room cleanup.
+   */
+  destroy() {
+    this._clearTurnTimer();
+    if (this._roundTimer) {
+      clearTimeout(this._roundTimer);
+      this._roundTimer = null;
+    }
+    this._roundEndedAt = null;
+    this.removeAllListeners();
+  }
+
   // ---------------------------------------------------------------------------
   // Turn management (private)
   // ---------------------------------------------------------------------------

@@ -225,6 +225,11 @@ export default class DonkeyGame extends EventEmitter {
     this._clearTurnTimer();
   }
 
+  destroy() {
+    this._clearTurnTimer();
+    this.removeAllListeners();
+  }
+
   // ---------------------------------------------------------------------------
   // Private — round management
   // ---------------------------------------------------------------------------
