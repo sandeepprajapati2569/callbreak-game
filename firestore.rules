@@ -1,0 +1,72 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function isRequestParty(data) {
+      return signedIn() && (
+        data.fromUid == request.auth.uid ||
+        data.toUid == request.auth.uid
+      );
+    }
+
+    function isFriendshipParty(data) {
+      return signedIn() && (
+        data.userA == request.auth.uid ||
+        data.userB == request.auth.uid
+      );
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create, update: if isSelf(uid);
+      allow delete: if false;
+    }
+
+    match /presence/{uid} {
+      allow read: if signedIn();
+      allow create, update: if isSelf(uid);
+      allow delete: if false;
+    }
+
+    match /friendRequests/{requestId} {
+      allow read: if isRequestParty(resource.data);
+      allow create: if signedIn()
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.toUid is string
+        && request.resource.data.fromUid != request.resource.data.toUid;
+      allow update: if isRequestParty(resource.data);
+      allow delete: if false;
+    }
+
+    match /friendships/{friendshipId} {
+      allow read: if isFriendshipParty(resource.data);
+      allow create: if signedIn()
+        && request.resource.data.userA is string
+        && request.resource.data.userB is string
+        && request.resource.data.userA != request.resource.data.userB
+        && (
+          request.resource.data.userA == request.auth.uid ||
+          request.resource.data.userB == request.auth.uid
+        );
+      allow delete: if isFriendshipParty(resource.data);
+      allow update: if false;
+    }
+
+    match /gameInvites/{inviteId} {
+      allow read: if isRequestParty(resource.data);
+      allow create: if signedIn()
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.toUid is string
+        && request.resource.data.fromUid != request.resource.data.toUid;
+      allow update: if isRequestParty(resource.data);
+      allow delete: if false;
+    }
+  }
+}

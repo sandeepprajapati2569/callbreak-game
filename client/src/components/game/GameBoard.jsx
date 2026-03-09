@@ -93,8 +93,8 @@ export default function GameBoard() {
   const opponents = positionedPlayers.filter((p) => p.position !== "bottom");
   const hasPlayers = players.length > 0;
   const hudTopOffset = isLandscapeMobile
-    ? "calc(env(safe-area-inset-top, 0px) + var(--native-status-bar-offset, 0px) + 2px)"
-    : "calc(env(safe-area-inset-top, 0px) + var(--native-status-bar-offset, 0px) + 4px)";
+    ? "5px"
+    : "calc(env(safe-area-inset-top, 0px) + var(--native-status-bar-offset, 0px) + 2px)";
   const bottomStationPositionClass = isLandscapeMobile
     ? phase === "BIDDING"
       ? "bottom-[76px]"

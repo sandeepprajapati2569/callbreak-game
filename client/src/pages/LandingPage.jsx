@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Users, LogIn, Sparkles, Zap, X, Loader, LogOut as LogOutIcon } from 'lucide-react'
+import { Users, LogIn, Sparkles, Zap, X, Loader, LogOut as LogOutIcon, UserPlus, UserCheck, UserX, Send, Clock3 } from 'lucide-react'
 import { useSocket } from '../context/SocketContext'
 import { useGame } from '../context/GameContext'
 import { useAuth } from '../context/AuthContext'
+import { useSocial } from '../context/SocialContext'
 import toast from 'react-hot-toast'
 import { APP_NAME, APP_TAGLINE } from '../config/app'
 
@@ -31,6 +32,25 @@ export default function LandingPage() {
   const [signingIn, setSigningIn] = useState(false)
   const [showGuestInput, setShowGuestInput] = useState(false)
   const [guestName, setGuestName] = useState('')
+  const [friendLookup, setFriendLookup] = useState('')
+  const [socialBusy, setSocialBusy] = useState(false)
+  const [socialActionKey, setSocialActionKey] = useState('')
+  const {
+    enabled: socialEnabled,
+    friends,
+    incomingFriendRequests,
+    outgoingFriendRequests,
+    incomingGameInvites,
+    outgoingGameInvites,
+    sendFriendRequest,
+    acceptFriendRequest,
+    declineFriendRequest,
+    cancelFriendRequest,
+    sendGameInvite,
+    acceptGameInvite,
+    declineGameInvite,
+    cancelGameInvite,
+  } = useSocial()
 
   // Get player name from auth
   const playerName = user?.displayName || ''
@@ -81,26 +101,43 @@ export default function LandingPage() {
     }
   }
 
-  const handleCreateRoom = () => {
+  const createRoomForInvite = async () => {
+    if (!socket) {
+      throw new Error('Connecting to server...')
+    }
+
+    dispatch({ type: 'SET_PLAYER_NAME', payload: playerName })
+    dispatch({ type: 'SET_GAME_TYPE', payload: gameMode })
+
+    return new Promise((resolve, reject) => {
+      socket.emit(
+        'create-room',
+        { playerName, maxPlayers, gameType: gameMode, photoURL: user?.photoURL || null },
+        (response) => {
+          if (response?.error) {
+            reject(new Error(response.error))
+            return
+          }
+          resolve(response)
+        },
+      )
+    })
+  }
+
+  const handleCreateRoom = async () => {
     if (!user) {
       toast.error('Please sign in first')
       return
     }
-    if (!socket) {
-      toast.error('Connecting to server...')
-      return
-    }
-    setLoading(true)
-    dispatch({ type: 'SET_PLAYER_NAME', payload: playerName })
-    dispatch({ type: 'SET_GAME_TYPE', payload: gameMode })
-    socket.emit('create-room', { playerName, maxPlayers, gameType: gameMode, photoURL: user?.photoURL || null }, (response) => {
+    try {
+      setLoading(true)
+      await createRoomForInvite()
+      navigate('/lobby')
+    } catch (error) {
+      toast.error(error?.message || 'Unable to create room')
+    } finally {
       setLoading(false)
-      if (response?.error) {
-        toast.error(response.error)
-      } else {
-        navigate('/lobby')
-      }
-    })
+    }
   }
 
   const handleJoinRoom = () => {
@@ -165,6 +202,206 @@ export default function LandingPage() {
   const handleRejoinGame = () => {
     if (!activeGame?.roomCode) return
     rejoinGame(activeGame.roomCode)
+  }
+
+  const handleSendFriendRequest = async () => {
+    const lookup = friendLookup.trim()
+    if (!lookup) {
+      toast.error('Enter friend email or ID')
+      return
+    }
+
+    try {
+      setSocialBusy(true)
+      const result = await sendFriendRequest(lookup)
+      if (result?.mode === 'auto-accepted') {
+        toast.success(`${result?.targetUser?.displayName || 'Friend'} added to your list`)
+      } else {
+        toast.success('Friend request sent')
+      }
+      setFriendLookup('')
+    } catch (error) {
+      toast.error(error?.message || 'Unable to send friend request')
+    } finally {
+      setSocialBusy(false)
+    }
+  }
+
+  const handleAcceptFriendRequest = async (requestId) => {
+    try {
+      setSocialActionKey(`friend-accept-${requestId}`)
+      await acceptFriendRequest(requestId)
+      toast.success('Friend request accepted')
+    } catch (error) {
+      toast.error(error?.message || 'Unable to accept request')
+    } finally {
+      setSocialActionKey('')
+    }
+  }
+
+  const handleDeclineFriendRequest = async (requestId) => {
+    try {
+      setSocialActionKey(`friend-decline-${requestId}`)
+      await declineFriendRequest(requestId)
+      toast('Friend request declined')
+    } catch (error) {
+      toast.error(error?.message || 'Unable to decline request')
+    } finally {
+      setSocialActionKey('')
+    }
+  }
+
+  const handleCancelFriendRequest = async (requestId) => {
+    try {
+      setSocialActionKey(`friend-cancel-${requestId}`)
+      await cancelFriendRequest(requestId)
+      toast('Friend request canceled')
+    } catch (error) {
+      toast.error(error?.message || 'Unable to cancel request')
+    } finally {
+      setSocialActionKey('')
+    }
+  }
+
+  const handleInviteFriend = async (friend) => {
+    if (!friend?.uid) return
+    if (!friend.isOnline) {
+      toast.error(`${friend.displayName || 'Friend'} is offline`)
+      return
+    }
+    if (!socket) {
+      toast.error('Connecting to server...')
+      return
+    }
+    if (queueing) {
+      toast.error('Leave quick play queue before sending invites')
+      return
+    }
+
+    const key = `invite-friend-${friend.uid}`
+    setSocialActionKey(key)
+
+    try {
+      let inviteRoomCode = state.roomCode || null
+      let inviteGameType = state.gameType || gameMode
+      let inviteMaxPlayers = state.maxPlayers || maxPlayers
+
+      if (!inviteRoomCode || state.phase === 'LANDING') {
+        setLoading(true)
+        const createdRoom = await createRoomForInvite()
+        inviteRoomCode = createdRoom.roomCode
+        inviteGameType = createdRoom.gameType || gameMode
+        inviteMaxPlayers = createdRoom.maxPlayers || maxPlayers
+      }
+
+      await sendGameInvite({
+        toUid: friend.uid,
+        roomCode: inviteRoomCode,
+        gameType: inviteGameType,
+        maxPlayers: inviteMaxPlayers,
+      })
+
+      toast.success(`Invite sent to ${friend.displayName || 'friend'}`)
+
+      if (state.phase !== 'LOBBY') {
+        navigate('/lobby')
+      }
+    } catch (error) {
+      toast.error(error?.message || 'Unable to send invite')
+    } finally {
+      setLoading(false)
+      setSocialActionKey('')
+    }
+  }
+
+  const handleAcceptGameInvite = async (inviteId) => {
+    if (!socket) {
+      toast.error('Connecting to server...')
+      return
+    }
+    if (!playerName) {
+      toast.error('Please sign in first')
+      return
+    }
+
+    const key = `invite-accept-${inviteId}`
+    setSocialActionKey(key)
+
+    try {
+      const invite = await acceptGameInvite(inviteId)
+
+      if (queueing) {
+        socket.emit('leave-queue', () => {
+          dispatch({ type: 'QUEUE_LEFT' })
+        })
+      }
+
+      if (state.roomCode && state.roomCode !== invite.roomCode) {
+        socket.emit('leave-room')
+      }
+
+      dispatch({ type: 'SET_PLAYER_NAME', payload: playerName })
+      dispatch({ type: 'SET_GAME_TYPE', payload: invite.gameType || gameMode })
+
+      await new Promise((resolve, reject) => {
+        socket.emit(
+          'join-room',
+          {
+            playerName,
+            roomCode: invite.roomCode,
+            photoURL: user?.photoURL || null,
+          },
+          (response) => {
+            if (response?.error) {
+              reject(new Error(response.error))
+              return
+            }
+            resolve(response)
+          },
+        )
+      })
+
+      toast.success(`Joined room ${invite.roomCode}`)
+      navigate('/lobby')
+    } catch (error) {
+      toast.error(error?.message || 'Unable to join invited game')
+    } finally {
+      setSocialActionKey('')
+    }
+  }
+
+  const handleDeclineGameInvite = async (inviteId) => {
+    try {
+      setSocialActionKey(`invite-decline-${inviteId}`)
+      await declineGameInvite(inviteId)
+      toast('Invite declined')
+    } catch (error) {
+      toast.error(error?.message || 'Unable to decline invite')
+    } finally {
+      setSocialActionKey('')
+    }
+  }
+
+  const handleCancelGameInvite = async (inviteId) => {
+    try {
+      setSocialActionKey(`invite-cancel-${inviteId}`)
+      await cancelGameInvite(inviteId)
+      toast('Invite canceled')
+    } catch (error) {
+      toast.error(error?.message || 'Unable to cancel invite')
+    } finally {
+      setSocialActionKey('')
+    }
+  }
+
+  const formatLastSeen = (timestamp) => {
+    if (!timestamp) return 'offline'
+    const value = typeof timestamp?.toMillis === 'function' ? timestamp.toMillis() : Number(timestamp) || 0
+    if (!value) return 'offline'
+    const ageMs = Date.now() - value
+    if (ageMs < 60_000) return 'just now'
+    if (ageMs < 3_600_000) return `${Math.max(1, Math.floor(ageMs / 60_000))}m ago`
+    return `${Math.max(1, Math.floor(ageMs / 3_600_000))}h ago`
   }
 
   return (
@@ -626,6 +863,217 @@ export default function LandingPage() {
               </motion.div>
             )}
           </AnimatePresence>
+
+          {socialEnabled && (
+            <motion.div
+              className="rounded-xl border border-white/10 bg-black/25 p-4 flex flex-col gap-3"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1, duration: 0.35 }}
+            >
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold" style={{ color: 'var(--gold)' }}>Friends & Invites</p>
+                <span className="text-xs opacity-50">{friends.length} friends</span>
+              </div>
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={friendLookup}
+                  onChange={(event) => setFriendLookup(event.target.value)}
+                  placeholder="Friend email or user ID"
+                  className="flex-1 px-3 py-2 rounded-lg bg-black/30 text-white text-sm
+                    placeholder-white/35 border border-white/10 outline-none
+                    focus:border-[var(--gold)] transition-colors"
+                  onKeyDown={(event) => event.key === 'Enter' && handleSendFriendRequest()}
+                />
+                <button
+                  type="button"
+                  onClick={handleSendFriendRequest}
+                  disabled={socialBusy}
+                  className="px-3 py-2 rounded-lg text-black disabled:opacity-50"
+                  style={{ background: 'linear-gradient(135deg, var(--gold), var(--gold-light))' }}
+                >
+                  <UserPlus size={16} />
+                </button>
+              </div>
+
+              <p className="text-[11px] opacity-45">
+                Search by email, exact display name, or Firebase UID.
+              </p>
+
+              {incomingFriendRequests.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs uppercase tracking-wider opacity-60">Friend Requests</p>
+                  {incomingFriendRequests.map((request) => (
+                    <div key={request.id} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/25 px-3 py-2">
+                      <span className="text-xs truncate">{request.fromDisplayName || 'Player'}</span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleAcceptFriendRequest(request.id)}
+                          disabled={socialActionKey === `friend-accept-${request.id}` || socialActionKey === `friend-decline-${request.id}`}
+                          className="p-1.5 rounded-md bg-green-500/20 text-green-400 disabled:opacity-50"
+                          title="Accept"
+                        >
+                          <UserCheck size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeclineFriendRequest(request.id)}
+                          disabled={socialActionKey === `friend-accept-${request.id}` || socialActionKey === `friend-decline-${request.id}`}
+                          className="p-1.5 rounded-md bg-red-500/20 text-red-400 disabled:opacity-50"
+                          title="Decline"
+                        >
+                          <UserX size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {outgoingFriendRequests.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs uppercase tracking-wider opacity-60">Pending Friend Requests</p>
+                  {outgoingFriendRequests.map((request) => (
+                    <div key={request.id} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/25 px-3 py-2">
+                      <span className="text-xs truncate">Waiting: {request.toDisplayName || 'Player'}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCancelFriendRequest(request.id)}
+                        disabled={socialActionKey === `friend-cancel-${request.id}`}
+                        className="px-2 py-1 rounded-md text-xs bg-white/10 hover:bg-white/15 disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {incomingGameInvites.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs uppercase tracking-wider opacity-60">Game Invites</p>
+                  {incomingGameInvites.map((invite) => (
+                    <div key={invite.id} className="rounded-lg border border-[rgba(212,175,55,0.35)] bg-[rgba(212,175,55,0.08)] px-3 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold truncate">
+                            {invite.fromDisplayName || 'Player'} invited you
+                          </p>
+                          <p className="text-[11px] opacity-60 truncate">
+                            {invite.gameType === 'donkey' ? 'Gadha Ladan' : 'Call Break'} • Room {invite.roomCode}
+                          </p>
+                        </div>
+                        <Clock3 size={14} className="opacity-45 shrink-0" />
+                      </div>
+                      <div className="mt-2 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleAcceptGameInvite(invite.id)}
+                          disabled={socialActionKey === `invite-accept-${invite.id}` || socialActionKey === `invite-decline-${invite.id}`}
+                          className="flex-1 px-2 py-1.5 rounded-md text-xs font-semibold text-black disabled:opacity-50"
+                          style={{ background: 'linear-gradient(135deg, var(--gold), var(--gold-light))' }}
+                        >
+                          Join
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeclineGameInvite(invite.id)}
+                          disabled={socialActionKey === `invite-accept-${invite.id}` || socialActionKey === `invite-decline-${invite.id}`}
+                          className="flex-1 px-2 py-1.5 rounded-md text-xs font-semibold bg-white/10 hover:bg-white/15 disabled:opacity-50"
+                        >
+                          Decline
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {outgoingGameInvites.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs uppercase tracking-wider opacity-60">Sent Invites</p>
+                  {outgoingGameInvites.map((invite) => (
+                    <div key={invite.id} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/25 px-3 py-2">
+                      <div className="min-w-0">
+                        <p className="text-xs truncate">To: {friends.find((friend) => friend.uid === invite.toUid)?.displayName || 'Friend'}</p>
+                        <p className="text-[11px] opacity-55 truncate">Room {invite.roomCode}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleCancelGameInvite(invite.id)}
+                        disabled={socialActionKey === `invite-cancel-${invite.id}`}
+                        className="px-2 py-1 rounded-md text-xs bg-white/10 hover:bg-white/15 disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="max-h-52 overflow-y-auto space-y-2 pr-1">
+                {friends.length === 0 && (
+                  <p className="text-xs opacity-45 text-center py-2">
+                    Add friends to send instant room invites.
+                  </p>
+                )}
+
+                {friends.map((friend) => {
+                  const friendInviteKey = `invite-friend-${friend.uid}`
+                  const inviteDisabled = !friend.isOnline || queueing || socialActionKey === friendInviteKey
+
+                  return (
+                    <div key={friend.uid} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        {friend.photoURL ? (
+                          <img
+                            src={friend.photoURL}
+                            alt=""
+                            className="w-7 h-7 rounded-full object-cover"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <div className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-xs font-semibold">
+                            {friend.displayName?.[0]?.toUpperCase() || '?'}
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-xs truncate">{friend.displayName}</p>
+                          <p className={`text-[11px] truncate ${friend.isOnline ? 'text-green-400' : 'opacity-45'}`}>
+                            {friend.isOnline ? `online${friend.currentRoomCode ? ` • room ${friend.currentRoomCode}` : ''}` : `last seen ${formatLastSeen(friend.lastSeenAt)}`}
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleInviteFriend(friend)}
+                        disabled={inviteDisabled}
+                        className="px-2.5 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1 disabled:opacity-45"
+                        style={
+                          friend.isOnline
+                            ? { background: 'rgba(212, 175, 55, 0.16)', color: 'var(--gold)', border: '1px solid rgba(212, 175, 55, 0.35)' }
+                            : { background: 'rgba(255, 255, 255, 0.08)' }
+                        }
+                      >
+                        <Send size={12} />
+                        Invite
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            </motion.div>
+          )}
+
+          {user?.isGuest && (
+            <p className="text-xs opacity-45 text-center">
+              Friends and invites are available when you sign in with Google.
+            </p>
+          )}
 
           </>)}
         </motion.div>

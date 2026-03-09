@@ -21,8 +21,9 @@ public class MainActivity extends BridgeActivity {
         window.setStatusBarColor(ContextCompat.getColor(this, R.color.colorPrimary));
         window.setNavigationBarColor(ContextCompat.getColor(this, R.color.colorPrimaryDark));
 
-        // Keep content below Android system bars (status/navigation) across devices.
-        WindowCompat.setDecorFitsSystemWindows(window, true);
+        // Use edge-to-edge so transient system bars (swipe gestures) overlay content
+        // instead of resizing/pushing the WebView down.
+        WindowCompat.setDecorFitsSystemWindows(window, false);
 
         View content = window.getDecorView().findViewById(android.R.id.content);
         if (content == null) return;
@@ -36,10 +37,10 @@ public class MainActivity extends BridgeActivity {
         ViewCompat.setOnApplyWindowInsetsListener(content, (view, insets) -> {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
             view.setPadding(
-                baseLeft,
-                baseTop + systemBars.top,
-                baseRight,
-                baseBottom
+                baseLeft + systemBars.left,
+                baseTop,
+                baseRight + systemBars.right,
+                baseBottom + systemBars.bottom
             );
             return insets;
         });

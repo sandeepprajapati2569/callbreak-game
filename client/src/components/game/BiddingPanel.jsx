@@ -20,8 +20,11 @@ export default function BiddingPanel() {
 
   const currentBidder = players.find((p) => p.id === currentTurn)
   const isShortLandscape = isLandscapeMobile && height <= 420
+  const panelWidth = isLandscapeMobile
+    ? (isShortLandscape ? 'min(92vw, 420px)' : 'min(88vw, 460px)')
+    : 'min(94vw, 420px)'
   const topOffset = isLandscapeMobile
-    ? 'calc(env(safe-area-inset-top, 0px) + var(--native-status-bar-offset, 0px) + 40px)'
+    ? '35px'
     : 'calc(env(safe-area-inset-top, 0px) + var(--native-status-bar-offset, 0px) + 52px)'
   const orderedBids = players.filter((p) => bids[p.id] !== undefined)
 
@@ -35,11 +38,12 @@ export default function BiddingPanel() {
       transition={{ duration: 0.3 }}
     >
       <motion.div
-        className={`pointer-events-auto glass-panel w-full ${
-          isLandscapeMobile ? 'max-w-[680px] p-2' : 'max-w-sm p-4 sm:p-6'
+        className={`pointer-events-auto glass-panel ${
+          isLandscapeMobile ? 'p-2.5' : 'p-4 sm:p-6'
         }`}
         style={{
-          maxHeight: isLandscapeMobile ? (isShortLandscape ? '28dvh' : '32dvh') : '55dvh',
+          width: panelWidth,
+          maxHeight: isLandscapeMobile ? (isShortLandscape ? '40dvh' : '46dvh') : '55dvh',
           overflowY: 'auto',
           overflowX: 'hidden',
           backdropFilter: 'blur(14px)',
@@ -102,7 +106,7 @@ export default function BiddingPanel() {
                     <motion.button
                       key={num}
                       onClick={() => setSelectedBid(num)}
-                      className={`${isShortLandscape ? 'w-8 h-8 text-xs' : 'w-9 h-9 text-sm'} rounded-lg font-bold transition-all duration-200 ${
+                      className={`${isShortLandscape ? 'w-8 h-8 text-xs' : 'w-9 h-9 text-sm'} rounded-lg font-bold shrink-0 transition-all duration-200 ${
                         selectedBid === num
                           ? 'text-black'
                           : 'bg-white/5 text-white/80 hover:bg-white/10 border border-white/10'
