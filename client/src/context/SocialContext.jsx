@@ -29,6 +29,7 @@ import {
 } from '../services/social'
 
 const SocialContext = createContext(null)
+const SOCIAL_FEATURE_ENABLED = String(import.meta.env.VITE_ENABLE_SOCIAL || 'false').toLowerCase() === 'true'
 
 function sortByNewest(items) {
   return [...items].sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt))
@@ -54,10 +55,11 @@ export function SocialProvider({ children }) {
   const [socialState, setSocialState] = useState(() => createEmptyState())
 
   const activeUid = user?.uid || null
-  const socialEnabled = Boolean(user && !user.isGuest)
+  const socialEnabled = SOCIAL_FEATURE_ENABLED && Boolean(user && !user.isGuest)
   const listenerUnsubsRef = useRef([])
   const friendListenerUnsubsRef = useRef([])
   const knownInviteIdsRef = useRef(new Set())
+  const inviteInitialLoadDoneRef = useRef(false)
   const presencePayloadRef = useRef({})
 
   const presencePayload = useMemo(() => {
@@ -78,6 +80,7 @@ export function SocialProvider({ children }) {
   const resetState = useCallback(() => {
     setSocialState(createEmptyState())
     knownInviteIdsRef.current = new Set()
+    inviteInitialLoadDoneRef.current = false
   }, [])
 
   const clearListeners = useCallback(() => {
@@ -454,15 +457,26 @@ export function SocialProvider({ children }) {
   useEffect(() => {
     if (!socialEnabled || !activeUid) {
       knownInviteIdsRef.current = new Set()
+      inviteInitialLoadDoneRef.current = false
       return
     }
 
     const currentIds = new Set(socialState.incomingGameInvites.map((invite) => invite.id))
 
-    socialState.incomingGameInvites.forEach((invite) => {
-      if (knownInviteIdsRef.current.has(invite.id)) return
-      toast(`${invite.fromDisplayName || 'Friend'} invited you to ${invite.gameType === 'donkey' ? 'Gadha Ladan' : 'Call Break'}`)
-    })
+    if (!inviteInitialLoadDoneRef.current) {
+      // First snapshot after sign-in: populate known IDs without toasting.
+      // Show a single summary if there are already-pending invites.
+      inviteInitialLoadDoneRef.current = true
+      if (socialState.incomingGameInvites.length > 0) {
+        const count = socialState.incomingGameInvites.length
+        toast(`You have ${count} pending game invite${count > 1 ? 's' : ''}`)
+      }
+    } else {
+      socialState.incomingGameInvites.forEach((invite) => {
+        if (knownInviteIdsRef.current.has(invite.id)) return
+        toast(`${invite.fromDisplayName || 'Friend'} invited you to ${invite.gameType === 'donkey' ? 'Gadha Ladan' : 'Call Break'}`)
+      })
+    }
 
     knownInviteIdsRef.current = currentIds
   }, [socialEnabled, activeUid, socialState.incomingGameInvites])
