@@ -9,7 +9,7 @@ const SocketContext = createContext(null)
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || ''
 
 export function SocketProvider({ children }) {
-  const { user } = useAuth()
+  const { user, idToken } = useAuth()
   const [socket, setSocket] = useState(null)
   const [isConnected, setIsConnected] = useState(false)
   const [playerId, setPlayerId] = useState(() => localStorage.getItem('callbreak_playerId') || null)
@@ -20,6 +20,11 @@ export function SocketProvider({ children }) {
   useEffect(() => {
     // Use Firebase UID if logged in, otherwise fall back to stored playerId
     const authPlayerId = user?.uid || playerId
+    const needsVerifiedToken = Boolean(user && !user.isGuest)
+
+    if (needsVerifiedToken && !idToken) {
+      return undefined
+    }
 
     const isNativePlatform = Boolean(window?.Capacitor?.isNativePlatform?.())
 
@@ -27,6 +32,9 @@ export function SocketProvider({ children }) {
       auth: {
         playerId: authPlayerId,
         roomCode: roomCode,
+        playerName: user?.displayName || '',
+        photoURL: user?.photoURL || null,
+        authToken: needsVerifiedToken ? idToken : null,
       },
       reconnection: true,
       reconnectionAttempts: 10,
@@ -75,7 +83,7 @@ export function SocketProvider({ children }) {
     return () => {
       newSocket.disconnect()
     }
-  }, [user?.uid])
+  }, [user?.uid, user?.displayName, user?.photoURL, user?.isGuest, idToken])
 
   const updatePlayerId = (id) => {
     setPlayerId(id)

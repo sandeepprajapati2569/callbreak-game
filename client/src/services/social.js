@@ -17,10 +17,12 @@ import {
 import { auth, db } from '../firebase'
 
 const USERS_COLLECTION = 'users'
+const USERNAMES_COLLECTION = 'usernames'
 const PRESENCE_COLLECTION = 'presence'
 const FRIEND_REQUESTS_COLLECTION = 'friendRequests'
 const FRIENDSHIPS_COLLECTION = 'friendships'
 const GAME_INVITES_COLLECTION = 'gameInvites'
+const SOCIAL_EDGES_COLLECTION = 'socialEdges'
 
 const GAME_INVITE_TTL_MS = 2 * 60 * 1000
 const ONLINE_STALE_MS = 90 * 1000
@@ -37,6 +39,29 @@ function normalize(value) {
   return String(value || '').trim().toLowerCase()
 }
 
+function normalizeUsername(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^@+/, '')
+    .replace(/[^a-z0-9_.-]/g, '')
+    .slice(0, 24)
+}
+
+function createUsernameFallback(user) {
+  const fromProfile = normalizeUsername(user?.username || '')
+  if (fromProfile) return fromProfile
+
+  const fromDisplayName = normalizeUsername(user?.displayName || '')
+  if (fromDisplayName) return fromDisplayName
+
+  const fromEmail = normalizeUsername(String(user?.email || '').split('@')[0] || '')
+  if (fromEmail) return fromEmail
+
+  const uidSeed = normalizeUsername(user?.uid || '')
+  return uidSeed ? `player_${uidSeed.slice(0, 8)}` : 'player'
+}
+
 function buildFriendshipId(uidA, uidB) {
   return [uidA, uidB].sort().join('__')
 }
@@ -47,6 +72,10 @@ function buildFriendRequestId(fromUid, toUid) {
 
 function buildGameInviteId(fromUid, toUid) {
   return `${fromUid}__${toUid}`
+}
+
+function buildSocialEdgeId(ownerUid, targetUid) {
+  return `${ownerUid}__${targetUid}`
 }
 
 export function toMillis(value) {
@@ -109,11 +138,19 @@ function parseRestUserDocument(document) {
     uid,
     displayName: getStringField(fields, 'displayName') || 'Player',
     displayNameLower: getStringField(fields, 'displayNameLower') || null,
+    username: getStringField(fields, 'username') || null,
+    usernameLower: getStringField(fields, 'usernameLower') || null,
+    claimedUsername: getStringField(fields, 'claimedUsername') || null,
+    claimedUsernameLower: getStringField(fields, 'claimedUsernameLower') || null,
     email: getStringField(fields, 'email') || null,
     emailLower: getStringField(fields, 'emailLower') || null,
     photoURL: getStringField(fields, 'photoURL') || null,
     isGuest: getBoolField(fields, 'isGuest'),
   }
+}
+
+function getPreferredUsername(profile) {
+  return profile?.claimedUsername || profile?.username || null
 }
 
 async function getAuthIdToken(forceRefresh = false) {
@@ -238,6 +275,12 @@ async function runUserQueryByField(fieldPath, value) {
 async function findUserByLookupViaRest(lookup, normalized) {
   if (!FIRESTORE_REST_BASE) return null
 
+  const normalizedUsername = normalizeUsername(lookup)
+  if (normalizedUsername) {
+    const usernameMatch = await runUserQueryByField('claimedUsernameLower', normalizedUsername)
+    if (usernameMatch) return usernameMatch
+  }
+
   if (lookup.includes('@')) {
     const emailMatch = await runUserQueryByField('emailLower', normalized)
     if (emailMatch) return emailMatch
@@ -281,11 +324,14 @@ export async function upsertUserProfile(user) {
   if (!user?.uid) return
 
   const ref = doc(db, USERS_COLLECTION, user.uid)
+  const username = createUsernameFallback(user)
 
   const profile = {
     uid: user.uid,
     displayName: user.displayName || 'Player',
     displayNameLower: normalize(user.displayName || 'Player'),
+    username,
+    usernameLower: normalizeUsername(username),
     email: user.email || null,
     emailLower: normalize(user.email),
     photoURL: user.photoURL || null,
@@ -343,6 +389,7 @@ export async function setUserOffline(uid) {
 export async function findUserByLookup(value) {
   const lookup = String(value || '').trim()
   const normalized = normalize(lookup)
+  const normalizedUsername = normalizeUsername(lookup)
 
   if (!normalized) return null
 
@@ -360,6 +407,19 @@ export async function findUserByLookup(value) {
   try {
     await enableNetwork(db).catch(() => {})
     return await withFirestoreRetry(async () => {
+      if (normalizedUsername) {
+        const usernameQuery = query(
+          collection(db, USERS_COLLECTION),
+          where('claimedUsernameLower', '==', normalizedUsername),
+          limit(1),
+        )
+        const usernameMatches = await getDocs(usernameQuery)
+        if (!usernameMatches.empty) {
+          const match = usernameMatches.docs[0]
+          return { uid: match.id, ...match.data() }
+        }
+      }
+
       if (lookup.includes('@')) {
         const emailQuery = query(
           collection(db, USERS_COLLECTION),
@@ -447,6 +507,179 @@ export async function findUserByLookup(value) {
   }
 }
 
+async function readSocialEdge(ownerUid, targetUid) {
+  if (!ownerUid || !targetUid) return null
+  const edgeRef = doc(db, SOCIAL_EDGES_COLLECTION, buildSocialEdgeId(ownerUid, targetUid))
+  const edgeSnap = await withFirestoreRetry(() => getDoc(edgeRef))
+  return edgeSnap.exists() ? edgeSnap.data() : null
+}
+
+async function ensureUsersCanInteract(ownerUid, targetUid) {
+  const [myEdge, reverseEdge] = await Promise.all([
+    readSocialEdge(ownerUid, targetUid),
+    readSocialEdge(targetUid, ownerUid),
+  ])
+
+  if (myEdge?.blocked) {
+    throw new Error('Unblock this user before sending requests or invites.')
+  }
+
+  if (reverseEdge?.blocked) {
+    throw new Error('This user is not available for requests or invites.')
+  }
+}
+
+export async function claimUsername({ user, username }) {
+  if (!user?.uid) {
+    throw new Error('Sign in to claim a username.')
+  }
+
+  const normalizedUsername = normalizeUsername(username)
+  if (normalizedUsername.length < 3) {
+    throw new Error('Username must be at least 3 characters.')
+  }
+  if (normalizedUsername.length > 24) {
+    throw new Error('Username must be 24 characters or fewer.')
+  }
+
+  const userRef = doc(db, USERS_COLLECTION, user.uid)
+  const usernameRef = doc(db, USERNAMES_COLLECTION, normalizedUsername)
+
+  try {
+    return await runTransaction(db, async (tx) => {
+      const [userSnap, usernameSnap] = await Promise.all([
+        tx.get(userRef),
+        tx.get(usernameRef),
+      ])
+
+      const existingOwnerUid = usernameSnap.exists() ? usernameSnap.data().ownerUid : null
+      if (existingOwnerUid && existingOwnerUid !== user.uid) {
+        throw new Error('That username is already taken.')
+      }
+
+      const previousUsername = normalizeUsername(userSnap.exists() ? userSnap.data().claimedUsernameLower || userSnap.data().claimedUsername : '')
+      if (previousUsername && previousUsername !== normalizedUsername) {
+        const previousRef = doc(db, USERNAMES_COLLECTION, previousUsername)
+        const previousSnap = await tx.get(previousRef)
+        if (previousSnap.exists() && previousSnap.data().ownerUid === user.uid) {
+          tx.delete(previousRef)
+        }
+      }
+
+      tx.set(usernameRef, {
+        ownerUid: user.uid,
+        username: normalizedUsername,
+        usernameLower: normalizedUsername,
+        updatedAt: serverTimestamp(),
+        claimedAt: serverTimestamp(),
+      }, { merge: true })
+
+      tx.set(userRef, {
+        uid: user.uid,
+        displayName: user.displayName || 'Player',
+        displayNameLower: normalize(user.displayName || 'Player'),
+        email: user.email || null,
+        emailLower: normalize(user.email),
+        photoURL: user.photoURL || null,
+        isGuest: Boolean(user.isGuest),
+        claimedUsername: normalizedUsername,
+        claimedUsernameLower: normalizedUsername,
+        updatedAt: serverTimestamp(),
+      }, { merge: true })
+
+      return {
+        username: normalizedUsername,
+        claimedUsername: normalizedUsername,
+      }
+    })
+  } catch (error) {
+    if (isFirestoreOfflineError(error)) {
+      throw new Error('Network issue while claiming username. Please try again.')
+    }
+    throw error
+  }
+}
+
+export async function setSocialEdge({
+  ownerUser,
+  targetUser,
+  blocked = false,
+  muted = false,
+}) {
+  if (!ownerUser?.uid) {
+    throw new Error('Sign in to update social controls.')
+  }
+  if (!targetUser?.uid || targetUser.uid === ownerUser.uid) {
+    throw new Error('Invalid user selection.')
+  }
+
+  const ownerUid = ownerUser.uid
+  const targetUid = targetUser.uid
+  const edgeRef = doc(db, SOCIAL_EDGES_COLLECTION, buildSocialEdgeId(ownerUid, targetUid))
+  const nextBlocked = Boolean(blocked)
+  const nextMuted = nextBlocked ? true : Boolean(muted)
+
+  try {
+    const existingEdge = await readSocialEdge(ownerUid, targetUid)
+
+    if (!nextBlocked && !nextMuted) {
+      if (existingEdge) {
+        await withFirestoreRetry(() => deleteDoc(edgeRef))
+      }
+      return { targetUid, blocked: false, muted: false }
+    }
+
+    await withFirestoreRetry(() => setDoc(edgeRef, {
+      ownerUid,
+      targetUid,
+      targetDisplayName: targetUser.displayName || 'Player',
+      targetPhotoURL: targetUser.photoURL || null,
+      blocked: nextBlocked,
+      muted: nextMuted,
+      updatedAt: serverTimestamp(),
+      createdAt: existingEdge?.createdAt || serverTimestamp(),
+    }, { merge: true }))
+
+    if (nextBlocked) {
+      const friendshipRef = doc(db, FRIENDSHIPS_COLLECTION, buildFriendshipId(ownerUid, targetUid))
+      const forwardRequestRef = doc(db, FRIEND_REQUESTS_COLLECTION, buildFriendRequestId(ownerUid, targetUid))
+      const reverseRequestRef = doc(db, FRIEND_REQUESTS_COLLECTION, buildFriendRequestId(targetUid, ownerUid))
+      const forwardInviteRef = doc(db, GAME_INVITES_COLLECTION, buildGameInviteId(ownerUid, targetUid))
+      const reverseInviteRef = doc(db, GAME_INVITES_COLLECTION, buildGameInviteId(targetUid, ownerUid))
+
+      await Promise.all([
+        withFirestoreRetry(async () => {
+          const snap = await getDoc(friendshipRef)
+          if (snap.exists()) await deleteDoc(friendshipRef)
+        }),
+        withFirestoreRetry(async () => {
+          const snap = await getDoc(forwardRequestRef)
+          if (snap.exists()) await deleteDoc(forwardRequestRef)
+        }),
+        withFirestoreRetry(async () => {
+          const snap = await getDoc(reverseRequestRef)
+          if (snap.exists()) await deleteDoc(reverseRequestRef)
+        }),
+        withFirestoreRetry(async () => {
+          const snap = await getDoc(forwardInviteRef)
+          if (snap.exists()) await deleteDoc(forwardInviteRef)
+        }),
+        withFirestoreRetry(async () => {
+          const snap = await getDoc(reverseInviteRef)
+          if (snap.exists()) await deleteDoc(reverseInviteRef)
+        }),
+      ])
+    }
+
+    return { targetUid, blocked: nextBlocked, muted: nextMuted }
+  } catch (error) {
+    if (isFirestoreOfflineError(error)) {
+      throw new Error('Network issue while updating social controls. Please try again.')
+    }
+    throw error
+  }
+}
+
 export async function sendFriendRequest({ fromUser, targetLookup }) {
   if (!fromUser?.uid) {
     throw new Error('Sign in to add friends.')
@@ -457,12 +690,14 @@ export async function sendFriendRequest({ fromUser, targetLookup }) {
 
   const targetUser = await findUserByLookup(targetLookup)
   if (!targetUser?.uid) {
-    throw new Error('No user found for that email or ID. Ask your friend to sign in once on the latest build.')
+    throw new Error('No user found for that username, email, or ID. Ask your friend to sign in once on the latest build.')
   }
 
   if (targetUser.uid === fromUser.uid) {
     throw new Error('You cannot add yourself.')
   }
+
+  await ensureUsersCanInteract(fromUser.uid, targetUser.uid)
 
   const friendshipRef = doc(
     db,
@@ -689,6 +924,8 @@ export async function sendGameInvite({
     throw new Error('You cannot invite yourself.')
   }
 
+  await ensureUsersCanInteract(fromUser.uid, toUid)
+
   const friendshipRef = doc(db, FRIENDSHIPS_COLLECTION, buildFriendshipId(fromUser.uid, toUid))
   const inviteRef = doc(db, GAME_INVITES_COLLECTION, buildGameInviteId(fromUser.uid, toUid))
 
@@ -844,8 +1081,11 @@ export async function expireInviteIfNeeded(inviteId, inviteData) {
 
 export {
   USERS_COLLECTION,
+  USERNAMES_COLLECTION,
   PRESENCE_COLLECTION,
   FRIEND_REQUESTS_COLLECTION,
   FRIENDSHIPS_COLLECTION,
   GAME_INVITES_COLLECTION,
+  SOCIAL_EDGES_COLLECTION,
+  getPreferredUsername,
 }

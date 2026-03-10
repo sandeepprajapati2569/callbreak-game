@@ -10,18 +10,22 @@ import {
   FRIENDSHIPS_COLLECTION,
   GAME_INVITES_COLLECTION,
   PRESENCE_COLLECTION,
+  SOCIAL_EDGES_COLLECTION,
   USERS_COLLECTION,
   acceptFriendRequest,
   acceptGameInvite,
   cancelFriendRequest,
   cancelGameInvite,
+  claimUsername,
   declineFriendRequest,
   declineGameInvite,
   expireInviteIfNeeded,
+  getPreferredUsername,
   isPresenceOnline,
   removeFriend,
   sendFriendRequest,
   sendGameInvite,
+  setSocialEdge,
   setUserOffline,
   setUserPresence,
   toMillis,
@@ -29,7 +33,7 @@ import {
 } from '../services/social'
 
 const SocialContext = createContext(null)
-const SOCIAL_FEATURE_ENABLED = String(import.meta.env.VITE_ENABLE_SOCIAL || 'false').toLowerCase() === 'true'
+const SOCIAL_FEATURE_ENABLED = String(import.meta.env.VITE_ENABLE_SOCIAL || 'true').toLowerCase() === 'true'
 
 function sortByNewest(items) {
   return [...items].sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt))
@@ -37,9 +41,11 @@ function sortByNewest(items) {
 
 function createEmptyState() {
   return {
+    selfProfile: null,
     friendIds: [],
     friendProfiles: {},
     friendPresence: {},
+    relationEdges: {},
     incomingFriendRequests: [],
     outgoingFriendRequests: [],
     incomingGameInvites: [],
@@ -114,6 +120,66 @@ export function SocialProvider({ children }) {
       console.error('Failed to upsert social profile:', error)
     })
   }, [socialEnabled, activeUid, user, clearListeners, resetState])
+
+  useEffect(() => {
+    if (!socialEnabled || !activeUid) return
+
+    const profileRef = doc(db, USERS_COLLECTION, activeUid)
+    const unsubscribe = onSnapshot(
+      profileRef,
+      (snapshot) => {
+        setSocialState((prev) => ({
+          ...prev,
+          selfProfile: snapshot.exists() ? { uid: activeUid, ...snapshot.data() } : null,
+        }))
+      },
+      (error) => {
+        console.error('Self profile listener failed:', error)
+      },
+    )
+
+    listenerUnsubsRef.current.push(unsubscribe)
+
+    return () => {
+      unsubscribe()
+      listenerUnsubsRef.current = listenerUnsubsRef.current.filter((fn) => fn !== unsubscribe)
+    }
+  }, [socialEnabled, activeUid])
+
+  useEffect(() => {
+    if (!socialEnabled || !activeUid) return
+
+    const edgesQuery = query(
+      collection(db, SOCIAL_EDGES_COLLECTION),
+      where('ownerUid', '==', activeUid),
+    )
+
+    const unsubscribe = onSnapshot(
+      edgesQuery,
+      (snapshot) => {
+        const nextEdges = {}
+        snapshot.docs.forEach((docSnap) => {
+          const edge = docSnap.data()
+          if (!edge?.targetUid) return
+          nextEdges[edge.targetUid] = { id: docSnap.id, ...edge }
+        })
+        setSocialState((prev) => ({
+          ...prev,
+          relationEdges: nextEdges,
+        }))
+      },
+      (error) => {
+        console.error('Social controls listener failed:', error)
+      },
+    )
+
+    listenerUnsubsRef.current.push(unsubscribe)
+
+    return () => {
+      unsubscribe()
+      listenerUnsubsRef.current = listenerUnsubsRef.current.filter((fn) => fn !== unsubscribe)
+    }
+  }, [socialEnabled, activeUid])
 
   useEffect(() => {
     if (!socialEnabled || !activeUid) return
@@ -378,7 +444,10 @@ export function SocialProvider({ children }) {
     })
     friendListenerUnsubsRef.current = []
 
-    if (!socialEnabled || socialState.friendIds.length === 0) {
+    const relatedTargetIds = Object.keys(socialState.relationEdges || {})
+    const trackedProfileIds = [...new Set([...socialState.friendIds, ...relatedTargetIds])]
+
+    if (!socialEnabled || trackedProfileIds.length === 0) {
       setSocialState((prev) => ({
         ...prev,
         friendProfiles: {},
@@ -389,7 +458,7 @@ export function SocialProvider({ children }) {
 
     const keepMapForCurrentFriends = (map) => {
       const next = {}
-      socialState.friendIds.forEach((id) => {
+      trackedProfileIds.forEach((id) => {
         if (map[id]) next[id] = map[id]
       })
       return next
@@ -403,7 +472,7 @@ export function SocialProvider({ children }) {
 
     const unsubs = []
 
-    socialState.friendIds.forEach((friendUid) => {
+    trackedProfileIds.forEach((friendUid) => {
       const profileRef = doc(db, USERS_COLLECTION, friendUid)
       const presenceRef = doc(db, PRESENCE_COLLECTION, friendUid)
 
@@ -452,7 +521,7 @@ export function SocialProvider({ children }) {
       })
       friendListenerUnsubsRef.current = []
     }
-  }, [socialEnabled, socialState.friendIds])
+  }, [socialEnabled, socialState.friendIds, socialState.relationEdges])
 
   useEffect(() => {
     if (!socialEnabled || !activeUid) {
@@ -462,24 +531,31 @@ export function SocialProvider({ children }) {
     }
 
     const currentIds = new Set(socialState.incomingGameInvites.map((invite) => invite.id))
+    const mutedSenderIds = new Set(
+      Object.entries(socialState.relationEdges || {})
+        .filter(([, edge]) => edge?.muted)
+        .map(([targetUid]) => targetUid),
+    )
 
     if (!inviteInitialLoadDoneRef.current) {
       // First snapshot after sign-in: populate known IDs without toasting.
       // Show a single summary if there are already-pending invites.
       inviteInitialLoadDoneRef.current = true
-      if (socialState.incomingGameInvites.length > 0) {
-        const count = socialState.incomingGameInvites.length
+      const visibleInviteCount = socialState.incomingGameInvites.filter((invite) => !mutedSenderIds.has(invite.fromUid)).length
+      if (visibleInviteCount > 0) {
+        const count = visibleInviteCount
         toast(`You have ${count} pending game invite${count > 1 ? 's' : ''}`)
       }
     } else {
       socialState.incomingGameInvites.forEach((invite) => {
         if (knownInviteIdsRef.current.has(invite.id)) return
+        if (mutedSenderIds.has(invite.fromUid)) return
         toast(`${invite.fromDisplayName || 'Friend'} invited you to ${invite.gameType === 'donkey' ? 'Gadha Ladan' : 'Call Break'}`)
       })
     }
 
     knownInviteIdsRef.current = currentIds
-  }, [socialEnabled, activeUid, socialState.incomingGameInvites])
+  }, [socialEnabled, activeUid, socialState.incomingGameInvites, socialState.relationEdges])
 
   useEffect(() => {
     return () => {
@@ -492,10 +568,12 @@ export function SocialProvider({ children }) {
       .map((friendUid) => {
         const profile = socialState.friendProfiles[friendUid] || { uid: friendUid, displayName: 'Player' }
         const presence = socialState.friendPresence[friendUid] || null
+        const edge = socialState.relationEdges[friendUid] || null
 
         return {
           uid: friendUid,
           displayName: profile.displayName || 'Player',
+          username: getPreferredUsername(profile),
           email: profile.email || null,
           photoURL: profile.photoURL || null,
           isOnline: isPresenceOnline(presence),
@@ -503,6 +581,8 @@ export function SocialProvider({ children }) {
           currentRoomCode: presence?.currentRoomCode || null,
           currentPhase: presence?.currentPhase || null,
           gameType: presence?.gameType || null,
+          isBlocked: Boolean(edge?.blocked),
+          isMuted: Boolean(edge?.muted),
         }
       })
       .sort((a, b) => {
@@ -511,7 +591,24 @@ export function SocialProvider({ children }) {
         }
         return a.displayName.localeCompare(b.displayName)
       })
-  }, [socialState.friendIds, socialState.friendProfiles, socialState.friendPresence])
+  }, [socialState.friendIds, socialState.friendProfiles, socialState.friendPresence, socialState.relationEdges])
+
+  const blockedUsers = useMemo(() => {
+    return Object.entries(socialState.relationEdges || {})
+      .filter(([, edge]) => edge?.blocked)
+      .map(([targetUid, edge]) => {
+        const profile = socialState.friendProfiles[targetUid] || {}
+        return {
+          uid: targetUid,
+          displayName: profile.displayName || edge.targetDisplayName || 'Player',
+          username: getPreferredUsername(profile),
+          photoURL: profile.photoURL || edge.targetPhotoURL || null,
+          isBlocked: true,
+          isMuted: Boolean(edge?.muted),
+        }
+      })
+      .sort((a, b) => a.displayName.localeCompare(b.displayName))
+  }, [socialState.relationEdges, socialState.friendProfiles])
 
   const sendFriendRequestAction = useCallback(
     async (targetLookup) => {
@@ -522,6 +619,20 @@ export function SocialProvider({ children }) {
       return sendFriendRequest({
         fromUser: user,
         targetLookup,
+      })
+    },
+    [socialEnabled, activeUid, user],
+  )
+
+  const claimUsernameAction = useCallback(
+    async (nextUsername) => {
+      if (!socialEnabled || !activeUid) {
+        throw new Error('Sign in with Google to claim a username.')
+      }
+
+      return claimUsername({
+        user,
+        username: nextUsername,
       })
     },
     [socialEnabled, activeUid, user],
@@ -643,14 +754,51 @@ export function SocialProvider({ children }) {
     [socialEnabled, activeUid],
   )
 
+  const setUserMutedAction = useCallback(
+    async (targetUser, muted) => {
+      if (!socialEnabled || !activeUid) {
+        throw new Error('Sign in with Google to use social controls.')
+      }
+
+      const existingEdge = socialState.relationEdges[targetUser?.uid] || null
+      return setSocialEdge({
+        ownerUser: user,
+        targetUser,
+        blocked: Boolean(existingEdge?.blocked),
+        muted,
+      })
+    },
+    [socialEnabled, activeUid, socialState.relationEdges, user],
+  )
+
+  const setUserBlockedAction = useCallback(
+    async (targetUser, blocked) => {
+      if (!socialEnabled || !activeUid) {
+        throw new Error('Sign in with Google to use social controls.')
+      }
+
+      const existingEdge = socialState.relationEdges[targetUser?.uid] || null
+      return setSocialEdge({
+        ownerUser: user,
+        targetUser,
+        blocked,
+        muted: blocked ? true : Boolean(existingEdge?.muted),
+      })
+    },
+    [socialEnabled, activeUid, socialState.relationEdges, user],
+  )
+
   const value = useMemo(
     () => ({
       enabled: socialEnabled,
+      profile: socialState.selfProfile,
       friends,
+      blockedUsers,
       incomingFriendRequests: socialState.incomingFriendRequests,
       outgoingFriendRequests: socialState.outgoingFriendRequests,
       incomingGameInvites: socialState.incomingGameInvites,
       outgoingGameInvites: socialState.outgoingGameInvites,
+      claimUsername: claimUsernameAction,
       sendFriendRequest: sendFriendRequestAction,
       acceptFriendRequest: acceptFriendRequestAction,
       declineFriendRequest: declineFriendRequestAction,
@@ -660,14 +808,19 @@ export function SocialProvider({ children }) {
       acceptGameInvite: acceptGameInviteAction,
       declineGameInvite: declineGameInviteAction,
       cancelGameInvite: cancelGameInviteAction,
+      setUserMuted: setUserMutedAction,
+      setUserBlocked: setUserBlockedAction,
     }),
     [
       socialEnabled,
+      socialState.selfProfile,
       friends,
+      blockedUsers,
       socialState.incomingFriendRequests,
       socialState.outgoingFriendRequests,
       socialState.incomingGameInvites,
       socialState.outgoingGameInvites,
+      claimUsernameAction,
       sendFriendRequestAction,
       acceptFriendRequestAction,
       declineFriendRequestAction,
@@ -677,6 +830,8 @@ export function SocialProvider({ children }) {
       acceptGameInviteAction,
       declineGameInviteAction,
       cancelGameInviteAction,
+      setUserMutedAction,
+      setUserBlockedAction,
     ],
   )
 

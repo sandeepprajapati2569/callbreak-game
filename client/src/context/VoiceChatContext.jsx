@@ -1,12 +1,14 @@
-import { createContext, useContext, useEffect, useRef } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef } from 'react'
 import { useVoiceChat } from '../hooks/useVoiceChat'
 import { useGame } from './GameContext'
+import { useParty } from './PartyContext'
 
 const VoiceChatContext = createContext(null)
 
 export function VoiceChatProvider({ children }) {
   const voiceChat = useVoiceChat()
   const { state } = useGame()
+  const { party } = useParty()
   const leaveVoiceRef = useRef(voiceChat.leaveVoice)
   const joinVoiceRef = useRef(voiceChat.joinVoice)
 
@@ -14,22 +16,45 @@ export function VoiceChatProvider({ children }) {
   leaveVoiceRef.current = voiceChat.leaveVoice
   joinVoiceRef.current = voiceChat.joinVoice
 
-  // Auto-join voice when player enters a room (LOBBY phase and beyond)
   const { phase, roomCode } = state
-  const isInRoom = roomCode && phase !== 'LANDING'
+  const isInRoom = Boolean(roomCode && phase !== 'LANDING')
+  const shouldUsePartyVoice = Boolean(
+    party
+    && party.status !== 'in_match'
+    && phase === 'LANDING'
+  )
 
-  useEffect(() => {
-    if (isInRoom && !voiceChat.isInVoice) {
-      joinVoiceRef.current()
+  const desiredVoiceChannel = useMemo(() => {
+    if (isInRoom && roomCode) {
+      return {
+        channelType: 'room',
+        channelId: `room:${roomCode}`,
+      }
     }
-  }, [isInRoom]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-leave voice when player leaves the room (kicked, disconnected, or navigated away)
-  useEffect(() => {
-    if (!isInRoom && voiceChat.isInVoice) {
-      leaveVoiceRef.current()
+    if (shouldUsePartyVoice && party?.partyId) {
+      return {
+        channelType: 'party',
+        channelId: `party:${party.partyId}`,
+      }
     }
-  }, [isInRoom]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    return null
+  }, [isInRoom, roomCode, shouldUsePartyVoice, party?.partyId])
+
+  // Auto-join or switch voice channel based on current pre-game/match context.
+  useEffect(() => {
+    if (!desiredVoiceChannel) {
+      if (voiceChat.isInVoice) {
+        leaveVoiceRef.current()
+      }
+      return
+    }
+
+    if (!voiceChat.isInVoice || voiceChat.currentChannel !== desiredVoiceChannel.channelId) {
+      joinVoiceRef.current(desiredVoiceChannel)
+    }
+  }, [desiredVoiceChannel, voiceChat.isInVoice, voiceChat.currentChannel]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cleanup on true app unmount
   useEffect(() => {

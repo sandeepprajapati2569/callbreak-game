@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import { GoogleAuthProvider, onAuthStateChanged, signInWithCredential, signInWithPopup, signOut as firebaseSignOut } from 'firebase/auth'
+import { GoogleAuthProvider, onIdTokenChanged, signInWithCredential, signInWithPopup, signOut as firebaseSignOut } from 'firebase/auth'
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication'
 import { Capacitor } from '@capacitor/core'
 import { auth, googleProvider } from '../firebase'
@@ -33,12 +33,12 @@ function isNativeRuntime() {
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
+  const [idToken, setIdToken] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsubscribe = onIdTokenChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        // Real Firebase user — clear any guest session
         localStorage.removeItem('callbreak_guest')
         setUser({
           uid: firebaseUser.uid,
@@ -46,9 +46,15 @@ export function AuthProvider({ children }) {
           email: firebaseUser.email,
           photoURL: firebaseUser.photoURL,
         })
+        try {
+          const nextIdToken = await firebaseUser.getIdToken()
+          setIdToken(nextIdToken || null)
+        } catch {
+          setIdToken(null)
+        }
       } else {
-        // No Firebase user — check for saved guest session
         const savedGuest = localStorage.getItem('callbreak_guest')
+        setIdToken(null)
         if (savedGuest) {
           try {
             setUser(JSON.parse(savedGuest))
@@ -104,12 +110,14 @@ export function AuthProvider({ children }) {
       photoURL: null,
       isGuest: true,
     }
+    setIdToken(null)
     setUser(guestUser)
     localStorage.setItem('callbreak_guest', JSON.stringify(guestUser))
   }
 
   const signOut = async () => {
     if (user?.isGuest) {
+      setIdToken(null)
       setUser(null)
       localStorage.removeItem('callbreak_guest')
       return
@@ -126,7 +134,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithGoogle, signInAsGuest, signOut }}>
+    <AuthContext.Provider value={{ user, idToken, loading, signInWithGoogle, signInAsGuest, signOut }}>
       {children}
     </AuthContext.Provider>
   )

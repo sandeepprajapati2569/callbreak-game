@@ -14,6 +14,15 @@ function normalizeLookup(value) {
   return String(value || '').trim().toLowerCase()
 }
 
+function normalizeUsername(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^@+/, '')
+    .replace(/[^a-z0-9_.-]/g, '')
+    .slice(0, 24)
+}
+
 function decodeJwtPayload(token) {
   try {
     const parts = String(token || '').split('.')
@@ -73,6 +82,10 @@ function parseRestUserDocument(document) {
     uid,
     displayName: getStringField(fields, 'displayName') || 'Player',
     displayNameLower: getStringField(fields, 'displayNameLower') || null,
+    username: getStringField(fields, 'username') || null,
+    usernameLower: getStringField(fields, 'usernameLower') || null,
+    claimedUsername: getStringField(fields, 'claimedUsername') || null,
+    claimedUsernameLower: getStringField(fields, 'claimedUsernameLower') || null,
     email: getStringField(fields, 'email') || null,
     emailLower: getStringField(fields, 'emailLower') || null,
     photoURL: getStringField(fields, 'photoURL') || null,
@@ -127,7 +140,13 @@ async function runUserQueryByField(token, projectId, fieldPath, value) {
 
 async function findUserByLookup(token, projectId, lookup) {
   const normalized = normalizeLookup(lookup)
+  const normalizedUsername = normalizeUsername(lookup)
   if (!normalized) return null
+
+  if (normalizedUsername) {
+    const usernameMatch = await runUserQueryByField(token, projectId, 'claimedUsernameLower', normalizedUsername)
+    if (usernameMatch) return usernameMatch
+  }
 
   if (lookup.includes('@')) {
     const emailMatch = await runUserQueryByField(token, projectId, 'emailLower', normalized)

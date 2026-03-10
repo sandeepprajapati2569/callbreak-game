@@ -103,6 +103,7 @@ export function useVoiceChat() {
   const localStreamRef = useRef(null)
   const peersRef = useRef(new Map())
   const isInVoiceRef = useRef(false)
+  const currentChannelRef = useRef(null)
 
   const [isInVoice, setIsInVoice] = useState(false)
   const [isMuted, setIsMuted] = useState(true)
@@ -111,9 +112,21 @@ export function useVoiceChat() {
   const [mutedPlayers, setMutedPlayers] = useState(new Set())
   const [voicePeers, setVoicePeers] = useState(new Set())
   const [isSelfSpeaking, setIsSelfSpeaking] = useState(false)
+  const [currentChannel, setCurrentChannel] = useState(null)
 
   // Track our own speaking state
   const selfDetectorRef = useRef(null)
+
+  const clearPeerConnections = useCallback(() => {
+    peersRef.current.forEach(({ pc, audioEl, cleanupDetector }) => {
+      if (cleanupDetector) cleanupDetector()
+      removeAudioEl(audioEl)
+      pc.close()
+    })
+    peersRef.current.clear()
+    setSpeakingPeers(new Set())
+    setVoicePeers(new Set())
+  }, [])
 
   const createPeerConnection = useCallback((peerId) => {
     // Deduplicate: if a connection already exists, return it
@@ -158,7 +171,11 @@ export function useVoiceChat() {
 
     pc.onicecandidate = (event) => {
       if (event.candidate && socket) {
-        socket.emit('webrtc-ice-candidate', { targetId: peerId, candidate: event.candidate })
+        socket.emit('webrtc-ice-candidate', {
+          targetId: peerId,
+          candidate: event.candidate,
+          channelId: currentChannelRef.current,
+        })
       }
     }
 
@@ -173,19 +190,64 @@ export function useVoiceChat() {
     return pc
   }, [socket])
 
-  const sendOffer = useCallback(async (peerId) => {
+  const sendOffer = useCallback(async (peerId, channelId = currentChannelRef.current) => {
+    if (!channelId) return
     const pc = createPeerConnection(peerId)
     try {
       const offer = await pc.createOffer()
       await pc.setLocalDescription(offer)
-      socket.emit('webrtc-offer', { targetId: peerId, offer: pc.localDescription })
+      socket.emit('webrtc-offer', {
+        targetId: peerId,
+        offer: pc.localDescription,
+        channelId,
+      })
     } catch (err) {
       console.error('[Voice] Failed to send offer:', err)
     }
   }, [socket, createPeerConnection])
 
-  const joinVoice = useCallback(async () => {
-    if (!socket || isInVoiceRef.current) return
+  const joinVoice = useCallback(async (options = {}) => {
+    if (!socket) return
+
+    const requestedChannelId = options?.channelId || null
+    const requestedChannelType = options?.channelType || null
+
+    const emitVoiceJoin = () => {
+      socket.emit(
+        'voice-join',
+        {
+          channelId: requestedChannelId,
+          channelType: requestedChannelType,
+        },
+        (response) => {
+          if (response?.success === false) {
+            console.warn('[Voice] Join rejected:', response.error)
+            return
+          }
+          const resolvedChannelId = response?.channelId || requestedChannelId || null
+          currentChannelRef.current = resolvedChannelId
+          setCurrentChannel(resolvedChannelId)
+        },
+      )
+    }
+
+    if (isInVoiceRef.current) {
+      if (requestedChannelId && currentChannelRef.current === requestedChannelId) return
+
+      if (currentChannelRef.current && currentChannelRef.current !== requestedChannelId) {
+        clearPeerConnections()
+        socket.emit('voice-leave', { channelId: currentChannelRef.current })
+      }
+
+      emitVoiceJoin()
+      return
+    }
+
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      console.warn('[Voice] getUserMedia is unavailable; skipping voice join in this environment')
+      return
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
@@ -204,20 +266,20 @@ export function useVoiceChat() {
       // Detect own speaking
       selfDetectorRef.current = createSpeakingDetector(stream, setIsSelfSpeaking)
 
-      // Tell server we joined voice — server will respond with existing peers
-      socket.emit('voice-join')
+      currentChannelRef.current = requestedChannelId || null
+      setCurrentChannel(requestedChannelId || null)
+      emitVoiceJoin()
     } catch (err) {
-      console.error('[Voice] Mic access denied:', err)
+      if (err?.name === 'NotAllowedError' || err?.name === 'NotSupportedError' || err?.name === 'NotFoundError') {
+        console.warn(`[Voice] Mic access unavailable (${err.name}); skipping voice join`)
+        return
+      }
+      console.error('[Voice] Failed to join voice chat:', err)
     }
-  }, [socket])
+  }, [socket, clearPeerConnections])
 
   const leaveVoice = useCallback(() => {
-    peersRef.current.forEach(({ pc, audioEl, cleanupDetector }) => {
-      if (cleanupDetector) cleanupDetector()
-      removeAudioEl(audioEl)
-      pc.close()
-    })
-    peersRef.current.clear()
+    clearPeerConnections()
 
     if (selfDetectorRef.current) {
       selfDetectorRef.current()
@@ -233,12 +295,12 @@ export function useVoiceChat() {
     setIsInVoice(false)
     setIsMuted(false)
     setIsForceMuted(false)
-    setSpeakingPeers(new Set())
     setIsSelfSpeaking(false)
-    setVoicePeers(new Set())
+    setCurrentChannel(null)
+    currentChannelRef.current = null
 
     if (socket) socket.emit('voice-leave')
-  }, [socket])
+  }, [socket, clearPeerConnections])
 
   const toggleMute = useCallback(() => {
     if (!localStreamRef.current || isForceMuted) return
@@ -253,23 +315,34 @@ export function useVoiceChat() {
   useEffect(() => {
     if (!socket) return
 
-    // CRITICAL FIX: Handle list of existing voice peers when we join
-    const handleExistingPeers = async ({ peerIds }) => {
+    // Receive the current channel peer list after a successful join.
+    const handleExistingPeers = async ({ peerIds, channelId }) => {
       if (!isInVoiceRef.current) return
+      if (channelId && currentChannelRef.current && channelId !== currentChannelRef.current) return
+      const effectiveChannelId = channelId || currentChannelRef.current
+      if (!effectiveChannelId) return
+      if (channelId && channelId !== currentChannelRef.current) {
+        currentChannelRef.current = channelId
+        setCurrentChannel(channelId)
+      }
       for (const peerId of peerIds) {
         if (peerId === playerId) continue
         setVoicePeers((prev) => new Set(prev).add(peerId))
-        await sendOffer(peerId)
+        await sendOffer(peerId, effectiveChannelId)
       }
     }
 
-    const handlePeerJoined = async ({ peerId }) => {
+    const handlePeerJoined = async ({ peerId, channelId }) => {
       if (!isInVoiceRef.current || peerId === playerId) return
+      if (channelId && currentChannelRef.current && channelId !== currentChannelRef.current) return
+      const effectiveChannelId = channelId || currentChannelRef.current
+      if (!effectiveChannelId) return
       setVoicePeers((prev) => new Set(prev).add(peerId))
-      await sendOffer(peerId)
+      await sendOffer(peerId, effectiveChannelId)
     }
 
-    const handlePeerLeft = ({ peerId }) => {
+    const handlePeerLeft = ({ peerId, channelId }) => {
+      if (channelId && currentChannelRef.current && channelId !== currentChannelRef.current) return
       const peerData = peersRef.current.get(peerId)
       if (peerData) {
         if (peerData.cleanupDetector) peerData.cleanupDetector()
@@ -289,8 +362,15 @@ export function useVoiceChat() {
       })
     }
 
-    const handleOffer = async ({ fromId, offer }) => {
+    const handleOffer = async ({ fromId, offer, channelId }) => {
       if (!isInVoiceRef.current) return
+      if (channelId && currentChannelRef.current && channelId !== currentChannelRef.current) return
+      const effectiveChannelId = channelId || currentChannelRef.current
+      if (!effectiveChannelId) return
+      if (channelId && channelId !== currentChannelRef.current) {
+        currentChannelRef.current = channelId
+        setCurrentChannel(channelId)
+      }
 
       // Perfect negotiation: handle glare (both sides sent offers)
       const existingPeer = peersRef.current.get(fromId)
@@ -319,13 +399,18 @@ export function useVoiceChat() {
 
         const answer = await pc.createAnswer()
         await pc.setLocalDescription(answer)
-        socket.emit('webrtc-answer', { targetId: fromId, answer: pc.localDescription })
+        socket.emit('webrtc-answer', {
+          targetId: fromId,
+          answer: pc.localDescription,
+          channelId: effectiveChannelId,
+        })
       } catch (err) {
         console.error('[Voice] Failed to handle offer:', err)
       }
     }
 
-    const handleAnswer = async ({ fromId, answer }) => {
+    const handleAnswer = async ({ fromId, answer, channelId }) => {
+      if (channelId && currentChannelRef.current && channelId !== currentChannelRef.current) return
       const peerData = peersRef.current.get(fromId)
       if (peerData) {
         try {
@@ -339,7 +424,8 @@ export function useVoiceChat() {
       }
     }
 
-    const handleIceCandidate = async ({ fromId, candidate }) => {
+    const handleIceCandidate = async ({ fromId, candidate, channelId }) => {
+      if (channelId && currentChannelRef.current && channelId !== currentChannelRef.current) return
       const peerData = peersRef.current.get(fromId)
       if (!peerData) return
 
@@ -355,7 +441,8 @@ export function useVoiceChat() {
       }
     }
 
-    const handleForceMute = ({ muted }) => {
+    const handleForceMute = ({ muted, channelId }) => {
+      if (channelId && currentChannelRef.current && channelId !== currentChannelRef.current) return
       setIsForceMuted(muted)
       if (localStreamRef.current) {
         const track = localStreamRef.current.getAudioTracks()[0]
@@ -366,7 +453,8 @@ export function useVoiceChat() {
       }
     }
 
-    const handlePlayerMuted = ({ playerId: mutedId, muted }) => {
+    const handlePlayerMuted = ({ playerId: mutedId, muted, channelId }) => {
+      if (channelId && currentChannelRef.current && channelId !== currentChannelRef.current) return
       setMutedPlayers((prev) => {
         const next = new Set(prev)
         if (muted) next.add(mutedId)
@@ -406,6 +494,7 @@ export function useVoiceChat() {
     speakingPeers,
     mutedPlayers,
     voicePeers,
+    currentChannel,
     joinVoice,
     leaveVoice,
     toggleMute,

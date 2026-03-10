@@ -8,6 +8,7 @@ import { AuthProvider } from './context/AuthContext'
 import { SocketProvider } from './context/SocketContext'
 import { GameProvider } from './context/GameContext'
 import { SocialProvider } from './context/SocialContext'
+import { PartyProvider } from './context/PartyContext'
 import { VoiceChatProvider } from './context/VoiceChatContext'
 import OfflineBanner from './components/OfflineBanner'
 import LandingPage from './pages/LandingPage'
@@ -225,14 +226,16 @@ function App() {
         <SocketProvider>
           <GameProvider>
             <SocialProvider>
-              <VoiceChatProvider>
-                <Routes>
-                  <Route path="/" element={<LandingPage />} />
-                  <Route path="/lobby" element={<LobbyPage />} />
-                  <Route path="/game" element={<GamePage />} />
-                  <Route path="/donkey-game" element={<DonkeyGamePage />} />
-                </Routes>
-              </VoiceChatProvider>
+              <PartyProvider>
+                <VoiceChatProvider>
+                  <Routes>
+                    <Route path="/" element={<LandingPage />} />
+                    <Route path="/lobby" element={<LobbyPage />} />
+                    <Route path="/game" element={<GamePage />} />
+                    <Route path="/donkey-game" element={<DonkeyGamePage />} />
+                  </Routes>
+                </VoiceChatProvider>
+              </PartyProvider>
               <Toaster
                 position="top-center"
                 toastOptions={{

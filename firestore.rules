@@ -23,10 +23,31 @@ service cloud.firestore {
       );
     }
 
+    function isPartyMember(data) {
+      return signedIn()
+        && data.memberUids is list
+        && request.auth.uid in data.memberUids;
+    }
+
+    function isSocialEdgeParty(data) {
+      return signedIn() && (
+        data.ownerUid == request.auth.uid ||
+        data.targetUid == request.auth.uid
+      );
+    }
+
     match /users/{uid} {
       allow read: if signedIn();
       allow create, update: if isSelf(uid);
       allow delete: if false;
+    }
+
+    match /usernames/{usernameLower} {
+      allow read: if signedIn();
+      allow create, update: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.usernameLower == usernameLower;
+      allow delete: if resource.data.ownerUid == request.auth.uid;
     }
 
     match /presence/{uid} {
@@ -67,6 +88,41 @@ service cloud.firestore {
         && request.resource.data.fromUid != request.resource.data.toUid;
       allow update: if isRequestParty(resource.data);
       allow delete: if false;
+    }
+
+    match /parties/{partyId} {
+      allow read: if isPartyMember(resource.data);
+      allow create: if signedIn()
+        && request.resource.data.leaderUid == request.auth.uid
+        && request.resource.data.memberUids is list
+        && request.auth.uid in request.resource.data.memberUids;
+      allow update: if isPartyMember(resource.data)
+        || isPartyMember(request.resource.data)
+        || request.resource.data.leaderUid == request.auth.uid;
+      allow delete: if false;
+    }
+
+    match /partyInvites/{inviteId} {
+      allow read: if isRequestParty(resource.data);
+      allow create: if signedIn()
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.toUid is string
+        && request.resource.data.fromUid != request.resource.data.toUid;
+      allow update: if isRequestParty(resource.data)
+        || isRequestParty(request.resource.data);
+      allow delete: if false;
+    }
+
+    match /socialEdges/{edgeId} {
+      allow read: if isSocialEdgeParty(resource.data);
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.targetUid is string
+        && request.resource.data.ownerUid != request.resource.data.targetUid;
+      allow update: if resource.data.ownerUid == request.auth.uid
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.targetUid == resource.data.targetUid;
+      allow delete: if resource.data.ownerUid == request.auth.uid;
     }
   }
 }

@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Copy, Check, Crown, MessageCircle, Send, X, LogOut, UserPlus, Clock3 } from 'lucide-react'
+import { Copy, Check, Crown, MessageCircle, Send, X, LogOut, UserPlus } from 'lucide-react'
 import { useSocket } from '../context/SocketContext'
 import { useGame } from '../context/GameContext'
-import { useAuth } from '../context/AuthContext'
 import { useSocial } from '../context/SocialContext'
+import { useParty } from '../context/PartyContext'
 import { useVoiceChatContext } from '../context/VoiceChatContext'
 import { useOrientation } from '../hooks/useOrientation'
 import VoiceChat from '../components/game/VoiceChat'
@@ -15,17 +15,22 @@ export default function LobbyPage() {
   const navigate = useNavigate()
   const { socket, setPlayerId, setRoomCode } = useSocket()
   const { state, dispatch } = useGame()
-  const { user } = useAuth()
   const {
     enabled: socialEnabled,
     friends,
-    incomingGameInvites,
-    outgoingGameInvites,
-    sendGameInvite,
-    acceptGameInvite,
-    declineGameInvite,
-    cancelGameInvite,
   } = useSocial()
+  const {
+    party,
+    busyKey: partyBusyKey,
+    isLeader: isPartyLeader,
+    myMember: myPartyMember,
+    inviteFriend: sendPartyInvite,
+    leaveParty,
+    setReady: setPartyReady,
+    launchPrivateRoom,
+    launchMatchmaking,
+    cancelMatchmaking,
+  } = useParty()
   const voiceChat = useVoiceChatContext()
   const [copied, setCopied] = useState(false)
   const [countdown, setCountdown] = useState(null)
@@ -38,10 +43,10 @@ export default function LobbyPage() {
 
   // Navigate to landing if no room
   useEffect(() => {
-    if (!roomCode && state.phase === 'LANDING') {
+    if (!roomCode && state.phase === 'LANDING' && !party) {
       navigate('/')
     }
-  }, [roomCode, state.phase, navigate])
+  }, [roomCode, state.phase, party, navigate])
 
   // Navigate to game when starting
   useEffect(() => {
@@ -113,103 +118,66 @@ export default function LobbyPage() {
     navigate('/')
   }
 
-  const handleInviteFriend = async (friend) => {
+  const handleLeaveParty = async () => {
+    try {
+      await leaveParty()
+      navigate('/')
+    } catch (error) {
+      toast.error(error?.message || 'Unable to leave party')
+    }
+  }
+
+  const handlePartyInviteFriend = async (friend) => {
     if (!friend?.uid) return
-    if (!friend.isOnline) {
-      toast.error(`${friend.displayName || 'Friend'} is offline`)
-      return
-    }
-    if (!roomCode) {
-      toast.error('Create room first')
-      return
-    }
-
-    const key = `invite-friend-${friend.uid}`
-    setSocialActionKey(key)
-
     try {
-      await sendGameInvite({
-        toUid: friend.uid,
-        roomCode,
-        gameType: state.gameType || 'callbreak',
-        maxPlayers: state.maxPlayers || maxPlayers,
-      })
-      toast.success(`Invite sent to ${friend.displayName || 'friend'}`)
+      setSocialActionKey(`party-invite-${friend.uid}`)
+      await sendPartyInvite(friend)
+      toast.success(`Party invite sent to ${friend.displayName || 'friend'}`)
     } catch (error) {
-      toast.error(error?.message || 'Unable to send invite')
+      toast.error(error?.message || 'Unable to send party invite')
     } finally {
       setSocialActionKey('')
     }
   }
 
-  const handleAcceptInvite = async (inviteId) => {
-    if (!socket) {
-      toast.error('Connecting to server...')
-      return
-    }
-
-    const key = `invite-accept-${inviteId}`
-    setSocialActionKey(key)
-
+  const handlePartyReadyToggle = async () => {
     try {
-      const invite = await acceptGameInvite(inviteId)
-      const playerName = user?.displayName || myPlayer?.name || state.playerName
+      await setPartyReady(!myPartyMember?.ready)
+    } catch (error) {
+      toast.error(error?.message || 'Unable to update ready status')
+    }
+  }
 
-      if (!playerName) {
-        throw new Error('Please sign in before joining invite')
+  const handlePartyLaunchPrivate = async () => {
+    try {
+      await launchPrivateRoom()
+      toast.success('Launching party room...')
+    } catch (error) {
+      toast.error(error?.message || 'Unable to launch private room')
+    }
+  }
+
+  const handlePartyLaunchMatchmaking = async () => {
+    try {
+      const response = await launchMatchmaking()
+      if (response?.queued) {
+        const position = response?.party?.matchmaking?.position || response?.position || 1
+        const total = response?.party?.matchmaking?.total || response?.total || 1
+        toast.success(`Party queued for matchmaking (${position}/${total})`)
+      } else {
+        toast.success('Party matchmaking launched')
       }
-
-      if (roomCode && roomCode !== invite.roomCode) {
-        socket.emit('leave-room')
-      }
-
-      dispatch({ type: 'SET_PLAYER_NAME', payload: playerName })
-      dispatch({ type: 'SET_GAME_TYPE', payload: invite.gameType || 'callbreak' })
-
-      await new Promise((resolve, reject) => {
-        socket.emit(
-          'join-room',
-          { playerName, roomCode: invite.roomCode, photoURL: user?.photoURL || null },
-          (response) => {
-            if (response?.error) {
-              reject(new Error(response.error))
-              return
-            }
-            resolve(response)
-          },
-        )
-      })
-
-      toast.success(`Joined room ${invite.roomCode}`)
-      navigate('/lobby')
     } catch (error) {
-      toast.error(error?.message || 'Unable to join invite')
-    } finally {
-      setSocialActionKey('')
+      toast.error(error?.message || 'Unable to launch matchmaking')
     }
   }
 
-  const handleDeclineInvite = async (inviteId) => {
+  const handlePartyCancelMatchmaking = async () => {
     try {
-      setSocialActionKey(`invite-decline-${inviteId}`)
-      await declineGameInvite(inviteId)
-      toast('Invite declined')
+      await cancelMatchmaking()
+      toast('Party matchmaking canceled')
     } catch (error) {
-      toast.error(error?.message || 'Unable to decline invite')
-    } finally {
-      setSocialActionKey('')
-    }
-  }
-
-  const handleCancelInvite = async (inviteId) => {
-    try {
-      setSocialActionKey(`invite-cancel-${inviteId}`)
-      await cancelGameInvite(inviteId)
-      toast('Invite canceled')
-    } catch (error) {
-      toast.error(error?.message || 'Unable to cancel invite')
-    } finally {
-      setSocialActionKey('')
+      toast.error(error?.message || 'Unable to cancel matchmaking')
     }
   }
 
@@ -222,6 +190,17 @@ export default function LobbyPage() {
   const seatSlots = Array.from({ length: maxPlayers }, (_, i) => i)
   const gridClass = { 2: 'grid-cols-2', 3: 'grid-cols-3', 4: 'grid-cols-2', 5: 'grid-cols-3' }[maxPlayers] || 'grid-cols-2'
   const landscapeGridClass = { 2: 'grid-cols-2', 3: 'grid-cols-3', 4: 'grid-cols-4', 5: 'grid-cols-5' }[maxPlayers] || 'grid-cols-4'
+  const partyMembers = party?.members || []
+  const connectedPartyMembers = partyMembers.filter((member) => member.connected)
+  const isPartyQueueing = party?.status === 'queueing'
+  const partyQueue = party?.matchmaking || null
+  const canPartyLaunch = Boolean(
+    party
+    && isPartyLeader
+    && connectedPartyMembers.length >= 2
+    && connectedPartyMembers.every((member) => member.ready)
+    && !isPartyQueueing
+  )
   const formatLastSeen = (timestamp) => {
     if (!timestamp) return 'offline'
     const value = typeof timestamp?.toMillis === 'function' ? timestamp.toMillis() : Number(timestamp) || 0
@@ -230,6 +209,178 @@ export default function LobbyPage() {
     if (ageMs < 60_000) return 'just now'
     if (ageMs < 3_600_000) return `${Math.max(1, Math.floor(ageMs / 60_000))}m ago`
     return `${Math.max(1, Math.floor(ageMs / 3_600_000))}h ago`
+  }
+
+  if (!roomCode && party) {
+    return (
+      <div
+        className="min-h-screen w-full flex items-center justify-center overflow-auto"
+        style={{
+          background: 'radial-gradient(ellipse at center, #0e4a2e 0%, #0A3622 35%, #072818 70%, #051a10 100%)',
+        }}
+      >
+        <div className="flex flex-col gap-4 max-w-5xl w-full px-4 sm:px-6 py-4 sm:py-8">
+          <motion.div
+            className="glass-panel p-4 sm:p-8 flex flex-col gap-4 sm:gap-6"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <p className="text-sm uppercase tracking-widest opacity-50 mb-1">
+                  {party.gameType === 'donkey' ? 'Gadha Ladan' : 'Call Break'} Party Lobby
+                </p>
+                <p className="text-xl sm:text-3xl font-semibold" style={{ color: 'var(--gold)' }}>
+                  Party {party.partyId?.slice(-6) || party.partyId}
+                </p>
+                <p className="text-xs opacity-55 mt-1">
+                  {connectedPartyMembers.length}/{party.targetSize} connected • {party.status}
+                  {isPartyQueueing && partyQueue ? ` • queue ${partyQueue.position}/${partyQueue.total}` : ''}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <VoiceChat voiceChat={voiceChat} />
+                <button
+                  type="button"
+                  onClick={handleLeaveParty}
+                  disabled={partyBusyKey === 'party:leave'}
+                  className="px-3 py-2 rounded-xl text-sm text-red-400/80 hover:text-red-400 hover:bg-red-500/10 disabled:opacity-60"
+                >
+                  Leave Party
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {partyMembers.map((member) => (
+                <div key={member.uid} className="rounded-xl border border-white/10 bg-black/20 px-3 py-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold truncate flex items-center gap-2">
+                      {member.role === 'leader' && <Crown size={14} style={{ color: 'var(--gold)' }} />}
+                      <span>{member.name || 'Player'}</span>
+                    </p>
+                    <p className="text-[11px] opacity-55 truncate">
+                      {member.connected ? 'Online' : 'Offline'} • {member.ready ? 'Ready' : 'Not Ready'}
+                    </p>
+                  </div>
+                  <div className={`text-[10px] uppercase px-2 py-1 rounded-full ${member.ready ? 'bg-green-500/20 text-green-400' : 'bg-white/8 text-white/45'}`}>
+                    {member.ready ? 'Ready' : 'Idle'}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <motion.button
+                onClick={handlePartyReadyToggle}
+                disabled={partyBusyKey === 'party:ready' || isPartyQueueing}
+                className="px-6 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60"
+                style={myPartyMember?.ready
+                  ? { border: '1px solid rgba(134,239,172,0.35)', color: '#86efac', background: 'rgba(33,150,83,0.16)' }
+                  : { background: 'linear-gradient(135deg, var(--gold), var(--gold-light))', color: '#000' }}
+                whileTap={{ scale: 0.97 }}
+              >
+                {myPartyMember?.ready ? 'Ready' : 'Set Ready'}
+              </motion.button>
+
+              {isPartyLeader && (
+                <>
+                  <motion.button
+                    onClick={handlePartyLaunchPrivate}
+                    disabled={!canPartyLaunch || partyBusyKey === 'party:launch:private'}
+                    className="px-6 py-2.5 rounded-xl text-sm font-semibold text-black disabled:opacity-60"
+                    style={{ background: 'linear-gradient(135deg, var(--gold), var(--gold-light))' }}
+                    whileTap={{ scale: 0.97 }}
+                  >
+                    Launch Private Room
+                  </motion.button>
+                  {isPartyQueueing ? (
+                    <motion.button
+                      onClick={handlePartyCancelMatchmaking}
+                      disabled={partyBusyKey === 'party:matchmaking:cancel'}
+                      className="px-6 py-2.5 rounded-xl text-sm font-semibold bg-red-500/15 text-red-300 border border-red-400/25 disabled:opacity-60"
+                      whileTap={{ scale: 0.97 }}
+                    >
+                      Cancel Matchmaking
+                    </motion.button>
+                  ) : (
+                    <motion.button
+                      onClick={handlePartyLaunchMatchmaking}
+                      disabled={!canPartyLaunch || partyBusyKey === 'party:launch:matchmaking'}
+                      className="px-6 py-2.5 rounded-xl text-sm font-semibold bg-white/10 hover:bg-white/15 disabled:opacity-60"
+                      whileTap={{ scale: 0.97 }}
+                    >
+                      Launch Matchmaking
+                    </motion.button>
+                  )}
+                </>
+              )}
+            </div>
+
+            {socialEnabled && (
+              <div className="rounded-xl border border-white/10 bg-black/25 p-3 sm:p-4 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs sm:text-sm font-semibold" style={{ color: 'var(--gold)' }}>
+                    Party Friends
+                  </p>
+                  <p className="text-[11px] sm:text-xs opacity-50">{friends.length} friends</p>
+                </div>
+
+                <div className="max-h-52 overflow-y-auto space-y-2 pr-1">
+                  {friends.length === 0 && (
+                    <p className="text-xs opacity-45 text-center py-2">
+                      Add friends from the home screen to invite them here.
+                    </p>
+                  )}
+                  {friends.map((friend) => {
+                    const inviteKey = `party-invite-${friend.uid}`
+                    const inviteDisabled = socialActionKey === inviteKey || !isPartyLeader || isPartyQueueing || partyBusyKey.startsWith('party:invite:')
+
+                    return (
+                      <div key={friend.uid} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          {friend.photoURL ? (
+                            <img
+                              src={friend.photoURL}
+                              alt=""
+                              className="w-7 h-7 rounded-full object-cover"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-xs font-semibold">
+                              {friend.displayName?.[0]?.toUpperCase() || '?'}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <p className="text-xs truncate">{friend.displayName}</p>
+                            <p className={`text-[11px] truncate ${friend.isOnline ? 'text-green-400' : 'opacity-45'}`}>
+                              {friend.isOnline ? `online${friend.currentRoomCode ? ` • room ${friend.currentRoomCode}` : ''}` : `last seen ${formatLastSeen(friend.lastSeenAt)}`}
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handlePartyInviteFriend(friend)}
+                          disabled={inviteDisabled}
+                          className="px-2 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1 disabled:opacity-45"
+                          style={{ background: 'rgba(212, 175, 55, 0.16)', color: 'var(--gold)', border: '1px solid rgba(212, 175, 55, 0.35)' }}
+                          title={isPartyLeader ? 'Send party invite' : 'Only leader can invite'}
+                        >
+                          <UserPlus size={12} />
+                          Invite
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </motion.div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -426,83 +577,33 @@ export default function LobbyPage() {
             <div className="w-full max-w-2xl rounded-xl border border-white/10 bg-black/25 p-3 sm:p-4 flex flex-col gap-3">
               <div className="flex items-center justify-between">
                 <p className="text-xs sm:text-sm font-semibold" style={{ color: 'var(--gold)' }}>
-                  Invite Friends
+                  Party Invites Live On Home
                 </p>
                 <p className="text-[11px] sm:text-xs opacity-50">{friends.length} friends</p>
               </div>
 
-              {incomingGameInvites.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-[11px] uppercase tracking-wider opacity-60">Incoming Invites</p>
-                  {incomingGameInvites.map((invite) => (
-                    <div key={invite.id} className="rounded-lg border border-[rgba(212,175,55,0.35)] bg-[rgba(212,175,55,0.08)] px-3 py-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="text-xs font-semibold truncate">{invite.fromDisplayName || 'Player'} invited you</p>
-                          <p className="text-[11px] opacity-55 truncate">
-                            {invite.gameType === 'donkey' ? 'Gadha Ladan' : 'Call Break'} • Room {invite.roomCode}
-                          </p>
-                        </div>
-                        <Clock3 size={14} className="opacity-45 shrink-0" />
-                      </div>
-                      <div className="mt-2 flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleAcceptInvite(invite.id)}
-                          disabled={socialActionKey === `invite-accept-${invite.id}` || socialActionKey === `invite-decline-${invite.id}`}
-                          className="flex-1 px-2 py-1.5 rounded-md text-xs font-semibold text-black disabled:opacity-50"
-                          style={{ background: 'linear-gradient(135deg, var(--gold), var(--gold-light))' }}
-                        >
-                          Join
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeclineInvite(invite.id)}
-                          disabled={socialActionKey === `invite-accept-${invite.id}` || socialActionKey === `invite-decline-${invite.id}`}
-                          className="flex-1 px-2 py-1.5 rounded-md text-xs font-semibold bg-white/10 hover:bg-white/15 disabled:opacity-50"
-                        >
-                          Decline
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {outgoingGameInvites.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-[11px] uppercase tracking-wider opacity-60">Sent Invites</p>
-                  {outgoingGameInvites.map((invite) => (
-                    <div key={invite.id} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2">
-                      <div className="min-w-0">
-                        <p className="text-xs truncate">
-                          To: {friends.find((friend) => friend.uid === invite.toUid)?.displayName || 'Friend'}
-                        </p>
-                        <p className="text-[11px] opacity-55 truncate">Room {invite.roomCode}</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleCancelInvite(invite.id)}
-                        disabled={socialActionKey === `invite-cancel-${invite.id}`}
-                        className="px-2 py-1 rounded-md text-xs bg-white/10 hover:bg-white/15 disabled:opacity-50"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <div className="rounded-lg border border-[rgba(212,175,55,0.22)] bg-[rgba(212,175,55,0.08)] px-3 py-3">
+                <p className="text-xs font-medium leading-relaxed opacity-80">
+                  Room lobbies no longer send direct invites. Create or join a party from the home screen, invite friends there,
+                  then launch the room with your party together.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleLeaveRoom}
+                  className="mt-3 px-3 py-2 rounded-lg text-xs font-semibold text-black"
+                  style={{ background: 'linear-gradient(135deg, var(--gold), var(--gold-light))' }}
+                >
+                  Leave Room To Manage Party
+                </button>
+              </div>
 
               <div className="max-h-40 overflow-y-auto space-y-2 pr-1">
                 {friends.length === 0 && (
                   <p className="text-xs opacity-45 text-center py-2">
-                    Add friends from the home screen and invite them here.
+                    Add friends from the home screen and launch your next match through a party.
                   </p>
                 )}
                 {friends.map((friend) => {
-                  const inviteKey = `invite-friend-${friend.uid}`
-                  const inviteDisabled = !friend.isOnline || socialActionKey === inviteKey
-
                   return (
                     <div key={friend.uid} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2">
                       <div className="flex items-center gap-2 min-w-0">
@@ -528,9 +629,8 @@ export default function LobbyPage() {
 
                       <button
                         type="button"
-                        onClick={() => handleInviteFriend(friend)}
-                        disabled={inviteDisabled}
-                        className="px-2 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1 disabled:opacity-45"
+                        onClick={handleLeaveRoom}
+                        className="px-2 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1"
                         style={
                           friend.isOnline
                             ? { background: 'rgba(212, 175, 55, 0.16)', color: 'var(--gold)', border: '1px solid rgba(212, 175, 55, 0.35)' }
@@ -538,7 +638,7 @@ export default function LobbyPage() {
                         }
                       >
                         <UserPlus size={12} />
-                        Invite
+                        Party Up
                       </button>
                     </div>
                   )
