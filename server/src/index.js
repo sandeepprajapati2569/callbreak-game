@@ -6,8 +6,7 @@ import registerHandlers from './socket/handlers.js';
 
 const PORT = process.env.PORT || 3001;
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || '';
-const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || 'callgroup-77248';
-const FIRESTORE_REST_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
+const DEFAULT_FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || 'callgroup-77248';
 const CARDTRAP_ORIGINS = ['https://cardtrap.com', 'https://www.cardtrap.com'];
 
 // Build allowed origins list — always include localhost for dev
@@ -55,6 +54,40 @@ function normalizeLookup(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+function decodeJwtPayload(token) {
+  try {
+    const parts = String(token || '').split('.');
+    if (parts.length < 2) return null;
+    const payload = parts[1]
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
+    const padded = payload.padEnd(payload.length + ((4 - payload.length % 4) % 4), '=');
+    return JSON.parse(Buffer.from(padded, 'base64').toString('utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function resolveFirestoreProjectId(token) {
+  const payload = decodeJwtPayload(token);
+  const fromAud = typeof payload?.aud === 'string' ? payload.aud.trim() : '';
+  if (fromAud) return fromAud;
+
+  const issuer = String(payload?.iss || '');
+  const issuerMatch = issuer.match(/securetoken\.google\.com\/([^/]+)$/);
+  if (issuerMatch?.[1]) return issuerMatch[1];
+
+  return DEFAULT_FIREBASE_PROJECT_ID;
+}
+
+function firestoreRestBase(projectId) {
+  const resolved = String(projectId || '').trim();
+  if (!resolved) {
+    throw new Error('Missing Firebase project configuration.');
+  }
+  return `https://firestore.googleapis.com/v1/projects/${resolved}/databases/(default)/documents`;
+}
+
 function parseBearerToken(authorizationHeader) {
   const raw = String(authorizationHeader || '');
   if (!raw.toLowerCase().startsWith('bearer ')) return null;
@@ -87,8 +120,8 @@ function parseRestUserDocument(document) {
   };
 }
 
-async function fetchFirestoreRest(path, token, options = {}) {
-  const response = await fetch(`${FIRESTORE_REST_BASE}${path}`, {
+async function fetchFirestoreRest(path, token, projectId, options = {}) {
+  const response = await fetch(`${firestoreRestBase(projectId)}${path}`, {
     method: options.method || 'GET',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -109,8 +142,8 @@ async function fetchFirestoreRest(path, token, options = {}) {
   return payload;
 }
 
-async function runUserQueryByField(token, fieldPath, value) {
-  const rows = await fetchFirestoreRest(':runQuery', token, {
+async function runUserQueryByField(token, projectId, fieldPath, value) {
+  const rows = await fetchFirestoreRest(':runQuery', token, projectId, {
     method: 'POST',
     body: {
       structuredQuery: {
@@ -132,28 +165,28 @@ async function runUserQueryByField(token, fieldPath, value) {
   return parseRestUserDocument(row?.document);
 }
 
-async function findUserByLookup(token, lookup) {
+async function findUserByLookup(token, projectId, lookup) {
   const normalized = normalizeLookup(lookup);
   if (!normalized) return null;
 
   if (lookup.includes('@')) {
-    const emailMatch = await runUserQueryByField(token, 'emailLower', normalized);
+    const emailMatch = await runUserQueryByField(token, projectId, 'emailLower', normalized);
     if (emailMatch) return emailMatch;
 
-    const exactEmailMatch = await runUserQueryByField(token, 'email', lookup);
+    const exactEmailMatch = await runUserQueryByField(token, projectId, 'email', lookup);
     if (exactEmailMatch) return exactEmailMatch;
 
     if (lookup !== normalized) {
-      const normalizedEmailMatch = await runUserQueryByField(token, 'email', normalized);
+      const normalizedEmailMatch = await runUserQueryByField(token, projectId, 'email', normalized);
       if (normalizedEmailMatch) return normalizedEmailMatch;
     }
   }
 
-  const directDoc = await fetchFirestoreRest(`/users/${encodeURIComponent(lookup)}`, token);
+  const directDoc = await fetchFirestoreRest(`/users/${encodeURIComponent(lookup)}`, token, projectId);
   const directMatch = parseRestUserDocument(directDoc);
   if (directMatch) return directMatch;
 
-  return runUserQueryByField(token, 'displayNameLower', normalized);
+  return runUserQueryByField(token, projectId, 'displayNameLower', normalized);
 }
 
 // Health check endpoint
@@ -182,7 +215,8 @@ app.post('/api/social/find-user', async (req, res) => {
   }
 
   try {
-    const user = await findUserByLookup(token, lookup);
+    const projectId = resolveFirestoreProjectId(token);
+    const user = await findUserByLookup(token, projectId, lookup);
     return res.json({ success: true, user });
   } catch (error) {
     console.error('[social/find-user] lookup failed:', error?.message || error);

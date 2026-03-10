@@ -349,10 +349,9 @@ export async function findUserByLookup(value) {
   let backendLookupError = null
 
   // Backend-first lookup is more stable than Firestore SDK in WebView or
-  // constrained networks. We still keep SDK/REST fallbacks for resilience.
+  // constrained networks. If backend succeeds, treat that result as authoritative.
   try {
-    const backendUser = await findUserByLookupViaBackend(lookup)
-    if (backendUser) return backendUser
+    return await findUserByLookupViaBackend(lookup)
   } catch (backendError) {
     backendLookupError = backendError
     console.warn('Backend social lookup failed:', backendError)

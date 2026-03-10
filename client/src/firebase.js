@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app'
 import { getAuth, GoogleAuthProvider } from 'firebase/auth'
 import { getFirestore, initializeFirestore, memoryLocalCache } from 'firebase/firestore'
+import { Capacitor } from '@capacitor/core'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -13,12 +14,26 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig)
 const auth = getAuth(app)
-const firestoreSettings = {
-  // Most stable mode across mobile WebView and restrictive networks/proxies.
-  experimentalForceLongPolling: true,
-  useFetchStreams: false,
-  localCache: memoryLocalCache(),
+
+function isNativeRuntime() {
+  try {
+    return Capacitor.isNativePlatform()
+  } catch {
+    return Boolean(globalThis?.Capacitor?.isNativePlatform?.())
+  }
 }
+
+const firestoreSettings = isNativeRuntime()
+  ? {
+      // Android WebView is more stable with long-polling transport.
+      experimentalForceLongPolling: true,
+      useFetchStreams: false,
+      localCache: memoryLocalCache(),
+    }
+  : {
+      // On desktop/mobile browsers prefer default transport for better reliability.
+      localCache: memoryLocalCache(),
+    }
 
 let db
 try {
