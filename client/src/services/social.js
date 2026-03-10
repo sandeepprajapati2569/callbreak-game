@@ -76,9 +76,12 @@ function isFirestoreOfflineError(error) {
 
   return (
     code === 'unavailable'
+    || code === 'failed-precondition'
     || code === 'deadline-exceeded'
     || message.includes('client is offline')
     || message.includes('network')
+    || message.includes('failed to fetch')
+    || message.includes('fetch failed')
   )
 }
 
@@ -163,9 +166,10 @@ async function findUserByLookupViaBackend(lookup) {
     }
   }
 
+  const uniqueEndpoints = [...new Set(endpoints)]
   let lastError = null
 
-  for (const endpoint of endpoints) {
+  for (const endpoint of uniqueEndpoints) {
     try {
       const doRequest = async () => fetch(endpoint, {
         method: 'POST',
@@ -182,13 +186,24 @@ async function findUserByLookupViaBackend(lookup) {
         response = await doRequest()
       }
 
-      const payload = await response.json().catch(() => null)
+      const contentType = String(response.headers.get('content-type') || '').toLowerCase()
+      const payload = contentType.includes('application/json')
+        ? await response.json().catch(() => null)
+        : null
+
       if (!response.ok) {
         lastError = new Error(payload?.error || `Social lookup failed (${response.status})`)
         continue
       }
 
-      return payload?.user || null
+      if (!payload || payload.success !== true) {
+        // Some hosts can return HTML/index fallback with 200. Treat as invalid and
+        // continue to the next endpoint instead of returning "not found".
+        lastError = new Error(`Unexpected social lookup response from ${endpoint}`)
+        continue
+      }
+
+      return payload.user || null
     } catch (error) {
       lastError = error
     }
@@ -266,7 +281,6 @@ export async function upsertUserProfile(user) {
   if (!user?.uid) return
 
   const ref = doc(db, USERS_COLLECTION, user.uid)
-  const snapshot = await getDoc(ref)
 
   const profile = {
     uid: user.uid,
@@ -279,15 +293,17 @@ export async function upsertUserProfile(user) {
     updatedAt: serverTimestamp(),
   }
 
-  if (!snapshot.exists()) {
-    await setDoc(ref, {
-      ...profile,
-      createdAt: serverTimestamp(),
-    })
-    return
+  try {
+    // Avoid read-before-write here. Reads are the first thing to fail in
+    // transient mobile networks and trigger noisy "client is offline" errors.
+    await withFirestoreRetry(() => setDoc(ref, profile, { merge: true }))
+  } catch (error) {
+    if (isFirestoreOfflineError(error)) {
+      // Best-effort sync: we'll retry on next heartbeat/foreground event.
+      return
+    }
+    throw error
   }
-
-  await setDoc(ref, profile, { merge: true })
 }
 
 export async function setUserPresence(uid, payload = {}) {
@@ -330,16 +346,20 @@ export async function findUserByLookup(value) {
 
   if (!normalized) return null
 
+  let backendLookupError = null
+
   // Backend-first lookup is more stable than Firestore SDK in WebView or
   // constrained networks. We still keep SDK/REST fallbacks for resilience.
   try {
     const backendUser = await findUserByLookupViaBackend(lookup)
     if (backendUser) return backendUser
   } catch (backendError) {
+    backendLookupError = backendError
     console.warn('Backend social lookup failed:', backendError)
   }
 
   try {
+    await enableNetwork(db).catch(() => {})
     return await withFirestoreRetry(async () => {
       if (lookup.includes('@')) {
         const emailQuery = query(
@@ -398,10 +418,13 @@ export async function findUserByLookup(value) {
       return null
     })
   } catch (error) {
+    let restLookupError = null
+
     try {
       const restUser = await findUserByLookupViaRest(lookup, normalized)
       if (restUser) return restUser
     } catch (restError) {
+      restLookupError = restError
       const restMessage = String(restError?.message || '').toLowerCase()
       if (restMessage.includes('permission_denied') || restMessage.includes('missing or insufficient permissions')) {
         throw new Error('Firestore rules are blocking user lookup. Please verify Firestore rules deployment.')
@@ -409,6 +432,13 @@ export async function findUserByLookup(value) {
       if (!isFirestoreOfflineError(error)) {
         throw error
       }
+    }
+
+    if (restLookupError && !isFirestoreOfflineError(restLookupError)) {
+      throw restLookupError
+    }
+    if (backendLookupError && !isFirestoreOfflineError(backendLookupError)) {
+      throw backendLookupError
     }
 
     if (isFirestoreOfflineError(error)) {
@@ -422,6 +452,9 @@ export async function sendFriendRequest({ fromUser, targetLookup }) {
   if (!fromUser?.uid) {
     throw new Error('Sign in to add friends.')
   }
+
+  // Ensure the sender profile exists before searching/creating requests.
+  await upsertUserProfile(fromUser).catch(() => {})
 
   const targetUser = await findUserByLookup(targetLookup)
   if (!targetUser?.uid) {

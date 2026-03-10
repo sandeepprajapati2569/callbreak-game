@@ -3,6 +3,8 @@ const FIRESTORE_REST_BASE = `https://firestore.googleapis.com/v1/projects/${FIRE
 const ALLOWED_ORIGINS = [
   'https://cardtrap.com',
   'https://www.cardtrap.com',
+  'https://localhost',
+  'https://127.0.0.1',
   'capacitor://localhost',
   'ionic://localhost',
   'http://localhost:5173',

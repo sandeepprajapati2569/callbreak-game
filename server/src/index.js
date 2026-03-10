@@ -15,6 +15,8 @@ const ALLOWED_ORIGINS = [
   'http://localhost:5173',
   'http://localhost:4173',
   'http://localhost',
+  'https://localhost',
+  'https://127.0.0.1',
   'capacitor://localhost',
   'ionic://localhost',
   ...CARDTRAP_ORIGINS,

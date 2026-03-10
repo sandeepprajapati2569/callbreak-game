@@ -115,12 +115,25 @@ export function SocialProvider({ children }) {
   useEffect(() => {
     if (!socialEnabled || !activeUid) return
 
+    const syncProfile = async () => {
+      try {
+        await upsertUserProfile(user)
+      } catch (error) {
+        console.error('Failed to upsert social profile:', error)
+      }
+    }
+
     const syncPresence = async () => {
       try {
         await setUserPresence(activeUid, presencePayloadRef.current)
       } catch (error) {
         console.error('Presence sync failed:', error)
       }
+    }
+
+    const syncSocialStatus = async () => {
+      await syncProfile()
+      await syncPresence()
     }
 
     const markOffline = async () => {
@@ -131,22 +144,22 @@ export function SocialProvider({ children }) {
       }
     }
 
-    syncPresence()
+    syncSocialStatus()
 
     const heartbeatId = setInterval(() => {
-      syncPresence()
+      syncSocialStatus()
     }, 30000)
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        syncPresence()
+        syncSocialStatus()
       } else {
         markOffline()
       }
     }
 
     const handleOnline = () => {
-      syncPresence()
+      syncSocialStatus()
     }
 
     const handleOffline = () => {
@@ -170,7 +183,7 @@ export function SocialProvider({ children }) {
       window.removeEventListener('beforeunload', handleBeforeUnload)
       setUserOffline(activeUid).catch(() => {})
     }
-  }, [socialEnabled, activeUid])
+  }, [socialEnabled, activeUid, user])
 
   useEffect(() => {
     if (!socialEnabled || !activeUid) return

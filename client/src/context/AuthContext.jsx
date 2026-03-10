@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { GoogleAuthProvider, onAuthStateChanged, signInWithCredential, signInWithPopup, signOut as firebaseSignOut } from 'firebase/auth'
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication'
+import { Capacitor } from '@capacitor/core'
 import { auth, googleProvider } from '../firebase'
 
 const AuthContext = createContext(null)
@@ -20,6 +21,14 @@ function createGuestId() {
 
   const fallback = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
   return `guest_${fallback.slice(0, 12)}`
+}
+
+function isNativeRuntime() {
+  try {
+    return Capacitor.isNativePlatform()
+  } catch {
+    return Boolean(globalThis?.Capacitor?.isNativePlatform?.())
+  }
 }
 
 export function AuthProvider({ children }) {
@@ -58,7 +67,7 @@ export function AuthProvider({ children }) {
 
   const signInWithGoogle = async () => {
     try {
-      const isNativePlatform = Boolean(window?.Capacitor?.isNativePlatform?.())
+      const isNativePlatform = isNativeRuntime()
 
       if (isNativePlatform) {
         // Native Google sign-in avoids webview redirect/sessionStorage issues in APK.
@@ -107,7 +116,7 @@ export function AuthProvider({ children }) {
     }
     try {
       await firebaseSignOut(auth)
-      if (window?.Capacitor?.isNativePlatform?.()) {
+      if (isNativeRuntime()) {
         await FirebaseAuthentication.signOut()
       }
     } catch (error) {
