@@ -41,10 +41,12 @@ export function SocialProvider({ children }) {
   const { state } = useGame()
   const { roomCode: socketRoomCode, isConnected, socket } = useSocket()
   const [socialState, setSocialState] = useState(() => createEmptyState())
+  const [loading, setLoading] = useState(false)
 
   const knownInviteIdsRef = useRef(new Set())
   const inviteInitialLoadDoneRef = useRef(false)
   const syncPromiseRef = useRef(null)
+  const initialLoadDoneRef = useRef(false)
 
   const activeUid = user?.uid || null
   const socialEnabled = SOCIAL_FEATURE_ENABLED && Boolean(user && idToken)
@@ -62,11 +64,13 @@ export function SocialProvider({ children }) {
 
   const resetState = useCallback(() => {
     setSocialState(createEmptyState())
+    setLoading(false)
     knownInviteIdsRef.current = new Set()
     inviteInitialLoadDoneRef.current = false
+    initialLoadDoneRef.current = false
   }, [])
 
-  const refreshState = useCallback(async ({ quiet = false } = {}) => {
+  const refreshState = useCallback(async ({ quiet = false, showLoading = false } = {}) => {
     if (!socialEnabled || !activeUid || !user) {
       resetState()
       return null
@@ -76,15 +80,22 @@ export function SocialProvider({ children }) {
       return syncPromiseRef.current
     }
 
+    if (showLoading && !initialLoadDoneRef.current) {
+      setLoading(true)
+    }
+
     const promise = syncSocialState({
       user,
       presence: presencePayload,
     })
       .then((nextState) => {
         setSocialState(nextState || createEmptyState())
+        initialLoadDoneRef.current = true
+        setLoading(false)
         return nextState
       })
       .catch((error) => {
+        setLoading(false)
         if (!quiet) {
           console.error('Social sync failed:', error)
         }
@@ -106,7 +117,7 @@ export function SocialProvider({ children }) {
       return undefined
     }
 
-    refreshState({ quiet: true }).catch(() => {})
+    refreshState({ quiet: true, showLoading: !initialLoadDoneRef.current }).catch(() => {})
     const intervalId = window.setInterval(() => {
       refreshState({ quiet: true }).catch(() => {})
     }, SOCIAL_SYNC_INTERVAL_MS)
@@ -310,6 +321,7 @@ export function SocialProvider({ children }) {
 
   const value = useMemo(() => ({
     enabled: socialEnabled,
+    loading,
     profile: socialState.profile,
     friends: socialState.friends,
     blockedUsers: socialState.blockedUsers,
@@ -333,6 +345,7 @@ export function SocialProvider({ children }) {
     setUserBlocked: setUserBlockedAction,
   }), [
     socialEnabled,
+    loading,
     socialState.profile,
     socialState.friends,
     socialState.blockedUsers,

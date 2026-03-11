@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from './AuthContext'
 import { useSocket } from './SocketContext'
 import { useSocial } from './SocialContext'
@@ -48,6 +48,8 @@ export function PartyProvider({ children }) {
   const [party, setParty] = useState(null)
   const [invites, setInvites] = useState([])
   const [busyKey, setBusyKey] = useState('')
+  const [loading, setLoading] = useState(false)
+  const initialLoadDoneRef = useRef(false)
 
   const enabled = PARTY_FEATURE_ENABLED && socialEnabled && Boolean(user)
 
@@ -55,6 +57,8 @@ export function PartyProvider({ children }) {
     setParty(null)
     setInvites([])
     setBusyKey('')
+    setLoading(false)
+    initialLoadDoneRef.current = false
   }, [])
 
   const emitWithAck = useCallback((eventName, payload = {}) => {
@@ -79,6 +83,9 @@ export function PartyProvider({ children }) {
 
   const recoverPartyState = useCallback(async () => {
     if (!enabled || !socket || !isConnected) return
+    if (!initialLoadDoneRef.current) {
+      setLoading(true)
+    }
     try {
       const [partyResponse, invitesResponse] = await Promise.all([
         emitWithAck('party:recover', {}),
@@ -88,6 +95,9 @@ export function PartyProvider({ children }) {
       setInvites(sortInvites(normalizeInvitePayload(invitesResponse).filter(isInviteLive)))
     } catch {
       // ignored - socket listeners still keep state synced after recovery attempts
+    } finally {
+      initialLoadDoneRef.current = true
+      setLoading(false)
     }
   }, [enabled, socket, isConnected, emitWithAck])
 
@@ -298,6 +308,7 @@ export function PartyProvider({ children }) {
 
   const value = useMemo(() => ({
     enabled,
+    loading,
     party,
     invites,
     busyKey,
@@ -317,6 +328,7 @@ export function PartyProvider({ children }) {
     kickMember,
   }), [
     enabled,
+    loading,
     party,
     invites,
     busyKey,
