@@ -49,7 +49,7 @@ export function PartyProvider({ children }) {
   const [invites, setInvites] = useState([])
   const [busyKey, setBusyKey] = useState('')
 
-  const enabled = PARTY_FEATURE_ENABLED && socialEnabled && Boolean(user && !user.isGuest)
+  const enabled = PARTY_FEATURE_ENABLED && socialEnabled && Boolean(user)
 
   const resetState = useCallback(() => {
     setParty(null)
@@ -142,7 +142,7 @@ export function PartyProvider({ children }) {
   }, [enabled, socket, isConnected, recoverPartyState, resetState, user?.uid])
 
   const createParty = useCallback(async ({ gameType = 'callbreak', targetSize = 4 } = {}) => {
-    if (!enabled) throw new Error('Sign in with Google to create a party.')
+    if (!enabled) throw new Error('Sign in to create a party.')
     setBusyKey('party:create')
     try {
       const response = await emitWithAck('party:create', {

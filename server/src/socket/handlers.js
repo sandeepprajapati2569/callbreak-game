@@ -1170,7 +1170,7 @@ export default function registerHandlers(io, socket, rooms, games) {
   const ensureIdentity = async (requireVerified = false) => {
     await identityReady.catch(() => null);
     if (requireVerified && !isSocketIdentityVerified(socket)) {
-      throw new Error('Please sign in with Google to use party features.');
+      throw new Error('Please sign in to use party features.');
     }
     return getSocketActor(socket);
   };

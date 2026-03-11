@@ -3,6 +3,24 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import registerHandlers from './socket/handlers.js';
+import { verifyFirebaseIdToken } from './services/firebasePartyStore.js';
+import {
+  acceptFriendRequest,
+  acceptGameInvite,
+  buildSocialContext,
+  cancelFriendRequest,
+  cancelGameInvite,
+  claimUsername,
+  declineFriendRequest,
+  declineGameInvite,
+  findUserByLookup as findSocialUserByLookup,
+  getSocialState,
+  markUserOffline,
+  removeFriend,
+  sendFriendRequest,
+  sendGameInvite,
+  setSocialEdge,
+} from './services/firebaseSocialStore.js';
 
 const PORT = process.env.PORT || 3001;
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || '';
@@ -222,30 +240,118 @@ app.get('/', (_req, res) => {
 // Social lookup fallback endpoint. Uses caller's Firebase ID token and
 // Firestore REST API so search still works if browser/WebView SDK transport
 // is unstable.
-app.post('/api/social/find-user', async (req, res) => {
-  const lookup = String(req.body?.lookup || '').trim();
+async function getVerifiedSocialContext(req) {
   const token = parseBearerToken(req.headers.authorization);
-
   if (!token) {
-    return res.status(401).json({ success: false, error: 'Missing auth token' });
-  }
-  if (!lookup) {
-    return res.status(400).json({ success: false, error: 'Lookup is required' });
+    const error = new Error('Missing auth token');
+    error.status = 401;
+    throw error;
   }
 
-  try {
-    const projectId = resolveFirestoreProjectId(token);
-    const user = await findUserByLookup(token, projectId, lookup);
-    return res.json({ success: true, user });
-  } catch (error) {
-    console.error('[social/find-user] lookup failed:', error?.message || error);
-    const status = Number(error?.status) || 500;
-    return res.status(status).json({
-      success: false,
-      error: error?.message || 'Failed to search user',
-    });
+  const verified = await verifyFirebaseIdToken(token);
+  return buildSocialContext({
+    uid: verified.uid,
+    projectId: verified.projectId,
+    idToken: token,
+  });
+}
+
+function handleSocialRoute(handler) {
+  return async (req, res) => {
+    try {
+      const socialContext = await getVerifiedSocialContext(req);
+      const payload = req.body || {};
+      const result = await handler(socialContext, payload, req, res);
+      return res.json({
+        success: true,
+        ...(result || {}),
+      });
+    } catch (error) {
+      const status = Number(error?.status) || 500;
+      console.error('[social-api] request failed:', error?.message || error);
+      return res.status(status).json({
+        success: false,
+        error: error?.message || 'Social request failed',
+      });
+    }
+  };
+}
+
+app.post('/api/social/find-user', handleSocialRoute(async (ctx, payload) => {
+  const lookup = String(payload?.lookup || '').trim();
+  if (!lookup) {
+    const error = new Error('Lookup is required');
+    error.status = 400;
+    throw error;
   }
-});
+  const user = await findSocialUserByLookup(ctx, lookup);
+  return { user };
+}));
+
+app.post('/api/social/sync', handleSocialRoute(async (ctx, payload) => {
+  const state = await getSocialState(ctx, payload || {});
+  return { state };
+}));
+
+app.post('/api/social/presence/offline', handleSocialRoute(async (ctx) => {
+  await markUserOffline(ctx);
+  return {};
+}));
+
+app.post('/api/social/username/claim', handleSocialRoute(async (ctx, payload) => {
+  const profile = await claimUsername(ctx, payload || {});
+  return { profile };
+}));
+
+app.post('/api/social/friend-request/send', handleSocialRoute(async (ctx, payload) => {
+  const result = await sendFriendRequest(ctx, payload || {});
+  return { result };
+}));
+
+app.post('/api/social/friend-request/accept', handleSocialRoute(async (ctx, payload) => {
+  const request = await acceptFriendRequest(ctx, payload || {});
+  return { request };
+}));
+
+app.post('/api/social/friend-request/decline', handleSocialRoute(async (ctx, payload) => {
+  const request = await declineFriendRequest(ctx, payload || {});
+  return { request };
+}));
+
+app.post('/api/social/friend-request/cancel', handleSocialRoute(async (ctx, payload) => {
+  const request = await cancelFriendRequest(ctx, payload || {});
+  return { request };
+}));
+
+app.post('/api/social/friend/remove', handleSocialRoute(async (ctx, payload) => {
+  const result = await removeFriend(ctx, payload || {});
+  return { result };
+}));
+
+app.post('/api/social/game-invite/send', handleSocialRoute(async (ctx, payload) => {
+  const invite = await sendGameInvite(ctx, payload || {});
+  return { invite };
+}));
+
+app.post('/api/social/game-invite/accept', handleSocialRoute(async (ctx, payload) => {
+  const invite = await acceptGameInvite(ctx, payload || {});
+  return { invite };
+}));
+
+app.post('/api/social/game-invite/decline', handleSocialRoute(async (ctx, payload) => {
+  const invite = await declineGameInvite(ctx, payload || {});
+  return { invite };
+}));
+
+app.post('/api/social/game-invite/cancel', handleSocialRoute(async (ctx, payload) => {
+  const invite = await cancelGameInvite(ctx, payload || {});
+  return { invite };
+}));
+
+app.post('/api/social/edge', handleSocialRoute(async (ctx, payload) => {
+  const edge = await setSocialEdge(ctx, payload || {});
+  return { edge };
+}));
 
 // ---------------------------------------------------------------------------
 // Socket.IO setup

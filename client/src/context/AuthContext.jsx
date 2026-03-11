@@ -1,5 +1,13 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import { GoogleAuthProvider, onIdTokenChanged, signInWithCredential, signInWithPopup, signOut as firebaseSignOut } from 'firebase/auth'
+import {
+  GoogleAuthProvider,
+  onIdTokenChanged,
+  signInAnonymously,
+  signInWithCredential,
+  signInWithPopup,
+  signOut as firebaseSignOut,
+  updateProfile,
+} from 'firebase/auth'
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication'
 import { Capacitor } from '@capacitor/core'
 import { auth, googleProvider } from '../firebase'
@@ -7,7 +15,6 @@ import { auth, googleProvider } from '../firebase'
 const AuthContext = createContext(null)
 
 function createGuestId() {
-  // Some Android WebView versions may not support crypto.randomUUID().
   if (globalThis?.crypto?.randomUUID) {
     return `guest_${globalThis.crypto.randomUUID().slice(0, 12)}`
   }
@@ -37,14 +44,39 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    const migrateLegacyGuest = async () => {
+      const savedGuest = localStorage.getItem('callbreak_guest')
+      if (!savedGuest) {
+        setUser(null)
+        setIdToken(null)
+        setLoading(false)
+        return
+      }
+
+      try {
+        const parsedGuest = JSON.parse(savedGuest)
+        const result = await signInAnonymously(auth)
+        if (parsedGuest?.displayName) {
+          await updateProfile(result.user, { displayName: parsedGuest.displayName.trim().slice(0, 24) || 'Guest' })
+        }
+        localStorage.removeItem('callbreak_guest')
+      } catch {
+        setUser(null)
+        setIdToken(null)
+        setLoading(false)
+      }
+    }
+
     const unsubscribe = onIdTokenChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         localStorage.removeItem('callbreak_guest')
+        const nextDisplayName = firebaseUser.displayName || (firebaseUser.isAnonymous ? 'Guest' : 'Player')
         setUser({
           uid: firebaseUser.uid,
-          displayName: firebaseUser.displayName || 'Player',
+          displayName: nextDisplayName,
           email: firebaseUser.email,
           photoURL: firebaseUser.photoURL,
+          isGuest: Boolean(firebaseUser.isAnonymous),
         })
         try {
           const nextIdToken = await firebaseUser.getIdToken()
@@ -52,20 +84,10 @@ export function AuthProvider({ children }) {
         } catch {
           setIdToken(null)
         }
+        setLoading(false)
       } else {
-        const savedGuest = localStorage.getItem('callbreak_guest')
-        setIdToken(null)
-        if (savedGuest) {
-          try {
-            setUser(JSON.parse(savedGuest))
-          } catch {
-            setUser(null)
-          }
-        } else {
-          setUser(null)
-        }
+        await migrateLegacyGuest()
       }
-      setLoading(false)
     })
 
     return () => unsubscribe()
@@ -101,32 +123,76 @@ export function AuthProvider({ children }) {
     }
   }
 
-  const signInAsGuest = (guestName) => {
-    const guestId = createGuestId()
-    const guestUser = {
-      uid: guestId,
-      displayName: guestName || 'Guest',
-      email: null,
-      photoURL: null,
-      isGuest: true,
+  const signInAsGuest = async (guestName) => {
+    const normalizedName = String(guestName || '').trim() || 'Guest'
+    try {
+      let firebaseUser = auth.currentUser
+
+      if (!firebaseUser || !firebaseUser.isAnonymous) {
+        const result = await signInAnonymously(auth)
+        firebaseUser = result.user
+      }
+
+      if (firebaseUser.displayName !== normalizedName) {
+        await updateProfile(firebaseUser, {
+          displayName: normalizedName,
+        })
+      }
+
+      const nextIdToken = await firebaseUser.getIdToken(true)
+      setIdToken(nextIdToken || null)
+      setUser({
+        uid: firebaseUser.uid,
+        displayName: normalizedName,
+        email: null,
+        photoURL: null,
+        isGuest: true,
+      })
+      localStorage.removeItem('callbreak_guest')
+      return firebaseUser
+    } catch (error) {
+      const code = String(error?.code || '').toLowerCase()
+      const message = String(error?.message || '').toLowerCase()
+      const anonymousAuthDisabled = code.includes('operation-not-allowed')
+        || code.includes('admin-restricted-operation')
+        || message.includes('admin_only_operation')
+        || message.includes('operation-not-allowed')
+
+      if (!anonymousAuthDisabled) {
+        throw error
+      }
+
+      const guestUser = {
+        uid: createGuestId(),
+        displayName: normalizedName,
+        email: null,
+        photoURL: null,
+        isGuest: true,
+        authMode: 'local',
+      }
+      setIdToken(null)
+      setUser(guestUser)
+      localStorage.setItem('callbreak_guest', JSON.stringify(guestUser))
+      return guestUser
     }
-    setIdToken(null)
-    setUser(guestUser)
-    localStorage.setItem('callbreak_guest', JSON.stringify(guestUser))
   }
 
   const signOut = async () => {
-    if (user?.isGuest) {
+    if (!auth.currentUser && user?.isGuest) {
       setIdToken(null)
       setUser(null)
       localStorage.removeItem('callbreak_guest')
       return
     }
+
     try {
       await firebaseSignOut(auth)
-      if (isNativeRuntime()) {
+      if (isNativeRuntime() && !user?.isGuest) {
         await FirebaseAuthentication.signOut()
       }
+      setIdToken(null)
+      setUser(null)
+      localStorage.removeItem('callbreak_guest')
     } catch (error) {
       console.error('Sign-out error:', error)
       throw error

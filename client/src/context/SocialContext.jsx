@@ -1,17 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { collection, doc, onSnapshot, query, where } from 'firebase/firestore'
 import toast from 'react-hot-toast'
-import { db } from '../firebase'
 import { useAuth } from './AuthContext'
 import { useGame } from './GameContext'
 import { useSocket } from './SocketContext'
 import {
-  FRIEND_REQUESTS_COLLECTION,
-  FRIENDSHIPS_COLLECTION,
-  GAME_INVITES_COLLECTION,
-  PRESENCE_COLLECTION,
-  SOCIAL_EDGES_COLLECTION,
-  USERS_COLLECTION,
   acceptFriendRequest,
   acceptGameInvite,
   cancelFriendRequest,
@@ -19,33 +11,24 @@ import {
   claimUsername,
   declineFriendRequest,
   declineGameInvite,
-  expireInviteIfNeeded,
-  getPreferredUsername,
-  isPresenceOnline,
+  findUserByLookup,
+  markSocialOffline,
   removeFriend,
   sendFriendRequest,
   sendGameInvite,
   setSocialEdge,
-  setUserOffline,
-  setUserPresence,
-  toMillis,
-  upsertUserProfile,
+  syncSocialState,
 } from '../services/social'
 
 const SocialContext = createContext(null)
 const SOCIAL_FEATURE_ENABLED = String(import.meta.env.VITE_ENABLE_SOCIAL || 'true').toLowerCase() === 'true'
-
-function sortByNewest(items) {
-  return [...items].sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt))
-}
+const SOCIAL_SYNC_INTERVAL_MS = 5000
 
 function createEmptyState() {
   return {
-    selfProfile: null,
-    friendIds: [],
-    friendProfiles: {},
-    friendPresence: {},
-    relationEdges: {},
+    profile: null,
+    friends: [],
+    blockedUsers: [],
     incomingFriendRequests: [],
     outgoingFriendRequests: [],
     incomingGameInvites: [],
@@ -54,19 +37,17 @@ function createEmptyState() {
 }
 
 export function SocialProvider({ children }) {
-  const { user } = useAuth()
+  const { user, idToken } = useAuth()
   const { state } = useGame()
-  const { roomCode: socketRoomCode, isConnected } = useSocket()
-
+  const { roomCode: socketRoomCode, isConnected, socket } = useSocket()
   const [socialState, setSocialState] = useState(() => createEmptyState())
 
-  const activeUid = user?.uid || null
-  const socialEnabled = SOCIAL_FEATURE_ENABLED && Boolean(user && !user.isGuest)
-  const listenerUnsubsRef = useRef([])
-  const friendListenerUnsubsRef = useRef([])
   const knownInviteIdsRef = useRef(new Set())
   const inviteInitialLoadDoneRef = useRef(false)
-  const presencePayloadRef = useRef({})
+  const syncPromiseRef = useRef(null)
+
+  const activeUid = user?.uid || null
+  const socialEnabled = SOCIAL_FEATURE_ENABLED && Boolean(user && idToken)
 
   const presencePayload = useMemo(() => {
     const native = Boolean(window?.Capacitor?.isNativePlatform?.())
@@ -79,164 +60,106 @@ export function SocialProvider({ children }) {
     }
   }, [socketRoomCode, state.roomCode, state.phase, state.gameType, isConnected])
 
-  useEffect(() => {
-    presencePayloadRef.current = presencePayload
-  }, [presencePayload])
-
   const resetState = useCallback(() => {
     setSocialState(createEmptyState())
     knownInviteIdsRef.current = new Set()
     inviteInitialLoadDoneRef.current = false
   }, [])
 
-  const clearListeners = useCallback(() => {
-    listenerUnsubsRef.current.forEach((unsubscribe) => {
-      try {
-        unsubscribe()
-      } catch {
-        // noop
-      }
-    })
-    listenerUnsubsRef.current = []
+  const refreshState = useCallback(async ({ quiet = false } = {}) => {
+    if (!socialEnabled || !activeUid || !user) {
+      resetState()
+      return null
+    }
 
-    friendListenerUnsubsRef.current.forEach((unsubscribe) => {
-      try {
-        unsubscribe()
-      } catch {
-        // noop
-      }
+    if (syncPromiseRef.current) {
+      return syncPromiseRef.current
+    }
+
+    const promise = syncSocialState({
+      user,
+      presence: presencePayload,
     })
-    friendListenerUnsubsRef.current = []
-  }, [])
+      .then((nextState) => {
+        setSocialState(nextState || createEmptyState())
+        return nextState
+      })
+      .catch((error) => {
+        if (!quiet) {
+          console.error('Social sync failed:', error)
+        }
+        throw error
+      })
+      .finally(() => {
+        if (syncPromiseRef.current === promise) {
+          syncPromiseRef.current = null
+        }
+      })
+
+    syncPromiseRef.current = promise
+    return promise
+  }, [socialEnabled, activeUid, user, presencePayload, resetState])
 
   useEffect(() => {
     if (!socialEnabled || !activeUid) {
-      clearListeners()
       resetState()
-      return
+      return undefined
     }
 
-    upsertUserProfile(user).catch((error) => {
-      console.error('Failed to upsert social profile:', error)
-    })
-  }, [socialEnabled, activeUid, user, clearListeners, resetState])
-
-  useEffect(() => {
-    if (!socialEnabled || !activeUid) return
-
-    const profileRef = doc(db, USERS_COLLECTION, activeUid)
-    const unsubscribe = onSnapshot(
-      profileRef,
-      (snapshot) => {
-        setSocialState((prev) => ({
-          ...prev,
-          selfProfile: snapshot.exists() ? { uid: activeUid, ...snapshot.data() } : null,
-        }))
-      },
-      (error) => {
-        console.error('Self profile listener failed:', error)
-      },
-    )
-
-    listenerUnsubsRef.current.push(unsubscribe)
+    refreshState({ quiet: true }).catch(() => {})
+    const intervalId = window.setInterval(() => {
+      refreshState({ quiet: true }).catch(() => {})
+    }, SOCIAL_SYNC_INTERVAL_MS)
 
     return () => {
-      unsubscribe()
-      listenerUnsubsRef.current = listenerUnsubsRef.current.filter((fn) => fn !== unsubscribe)
+      window.clearInterval(intervalId)
     }
-  }, [socialEnabled, activeUid])
+  }, [socialEnabled, activeUid, refreshState, resetState])
 
   useEffect(() => {
     if (!socialEnabled || !activeUid) return
+    refreshState({ quiet: true }).catch(() => {})
+  }, [socialEnabled, activeUid, presencePayload, refreshState])
 
-    const edgesQuery = query(
-      collection(db, SOCIAL_EDGES_COLLECTION),
-      where('ownerUid', '==', activeUid),
-    )
+  useEffect(() => {
+    if (!socialEnabled || !activeUid || !socket) return
 
-    const unsubscribe = onSnapshot(
-      edgesQuery,
-      (snapshot) => {
-        const nextEdges = {}
-        snapshot.docs.forEach((docSnap) => {
-          const edge = docSnap.data()
-          if (!edge?.targetUid) return
-          nextEdges[edge.targetUid] = { id: docSnap.id, ...edge }
-        })
-        setSocialState((prev) => ({
-          ...prev,
-          relationEdges: nextEdges,
-        }))
-      },
-      (error) => {
-        console.error('Social controls listener failed:', error)
-      },
-    )
+    const handleConnect = () => {
+      refreshState({ quiet: true }).catch(() => {})
+    }
 
-    listenerUnsubsRef.current.push(unsubscribe)
+    socket.on('connect', handleConnect)
+    socket.on('party:invite', handleConnect)
+    socket.on('party:invite:updated', handleConnect)
 
     return () => {
-      unsubscribe()
-      listenerUnsubsRef.current = listenerUnsubsRef.current.filter((fn) => fn !== unsubscribe)
+      socket.off('connect', handleConnect)
+      socket.off('party:invite', handleConnect)
+      socket.off('party:invite:updated', handleConnect)
     }
-  }, [socialEnabled, activeUid])
+  }, [socialEnabled, activeUid, socket, refreshState])
 
   useEffect(() => {
-    if (!socialEnabled || !activeUid) return
-
-    const syncProfile = async () => {
-      try {
-        await upsertUserProfile(user)
-      } catch (error) {
-        console.error('Failed to upsert social profile:', error)
-      }
-    }
-
-    const syncPresence = async () => {
-      try {
-        await setUserPresence(activeUid, presencePayloadRef.current)
-      } catch (error) {
-        console.error('Presence sync failed:', error)
-      }
-    }
-
-    const syncSocialStatus = async () => {
-      await syncProfile()
-      await syncPresence()
-    }
-
-    const markOffline = async () => {
-      try {
-        await setUserOffline(activeUid)
-      } catch (error) {
-        console.error('Failed to mark user offline:', error)
-      }
-    }
-
-    syncSocialStatus()
-
-    const heartbeatId = setInterval(() => {
-      syncSocialStatus()
-    }, 30000)
+    if (!socialEnabled || !activeUid) return undefined
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        syncSocialStatus()
+        refreshState({ quiet: true }).catch(() => {})
       } else {
-        markOffline()
+        markSocialOffline().catch(() => {})
       }
     }
 
     const handleOnline = () => {
-      syncSocialStatus()
+      refreshState({ quiet: true }).catch(() => {})
     }
 
     const handleOffline = () => {
-      markOffline()
+      markSocialOffline().catch(() => {})
     }
 
     const handleBeforeUnload = () => {
-      setUserOffline(activeUid).catch(() => {})
+      markSocialOffline().catch(() => {})
     }
 
     document.addEventListener('visibilitychange', handleVisibilityChange)
@@ -245,283 +168,13 @@ export function SocialProvider({ children }) {
     window.addEventListener('beforeunload', handleBeforeUnload)
 
     return () => {
-      clearInterval(heartbeatId)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
       window.removeEventListener('beforeunload', handleBeforeUnload)
-      setUserOffline(activeUid).catch(() => {})
+      markSocialOffline().catch(() => {})
     }
-  }, [socialEnabled, activeUid, user])
-
-  useEffect(() => {
-    if (!socialEnabled || !activeUid) return
-
-    setUserPresence(activeUid, presencePayload).catch((error) => {
-      console.error('Presence update failed:', error)
-    })
-  }, [socialEnabled, activeUid, presencePayload])
-
-  useEffect(() => {
-    if (!socialEnabled || !activeUid) return
-
-    const friendshipsQuery = query(
-      collection(db, FRIENDSHIPS_COLLECTION),
-      where('users', 'array-contains', activeUid),
-    )
-
-    const unsubscribe = onSnapshot(
-      friendshipsQuery,
-      (snapshot) => {
-        const nextIds = snapshot.docs
-          .map((docSnap) => {
-            const data = docSnap.data()
-            if (!Array.isArray(data.users)) return null
-            return data.users.find((id) => id !== activeUid) || null
-          })
-          .filter(Boolean)
-          .sort((a, b) => a.localeCompare(b))
-
-        setSocialState((prev) => ({
-          ...prev,
-          friendIds: nextIds,
-        }))
-      },
-      (error) => {
-        console.error('Friendships listener failed:', error)
-      },
-    )
-
-    listenerUnsubsRef.current.push(unsubscribe)
-
-    return () => {
-      unsubscribe()
-      listenerUnsubsRef.current = listenerUnsubsRef.current.filter((fn) => fn !== unsubscribe)
-    }
-  }, [socialEnabled, activeUid])
-
-  useEffect(() => {
-    if (!socialEnabled || !activeUid) return
-
-    const incomingRequestsQuery = query(
-      collection(db, FRIEND_REQUESTS_COLLECTION),
-      where('toUid', '==', activeUid),
-    )
-    const outgoingRequestsQuery = query(
-      collection(db, FRIEND_REQUESTS_COLLECTION),
-      where('fromUid', '==', activeUid),
-    )
-
-    const unsubscribeIncoming = onSnapshot(
-      incomingRequestsQuery,
-      (snapshot) => {
-        const requests = snapshot.docs
-          .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
-          .filter((request) => request.status === 'pending')
-        setSocialState((prev) => ({
-          ...prev,
-          incomingFriendRequests: sortByNewest(requests),
-        }))
-      },
-      (error) => {
-        console.error('Incoming friend requests listener failed:', error)
-      },
-    )
-
-    const unsubscribeOutgoing = onSnapshot(
-      outgoingRequestsQuery,
-      (snapshot) => {
-        const requests = snapshot.docs
-          .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
-          .filter((request) => request.status === 'pending')
-        setSocialState((prev) => ({
-          ...prev,
-          outgoingFriendRequests: sortByNewest(requests),
-        }))
-      },
-      (error) => {
-        console.error('Outgoing friend requests listener failed:', error)
-      },
-    )
-
-    listenerUnsubsRef.current.push(unsubscribeIncoming, unsubscribeOutgoing)
-
-    return () => {
-      unsubscribeIncoming()
-      unsubscribeOutgoing()
-      listenerUnsubsRef.current = listenerUnsubsRef.current.filter(
-        (fn) => fn !== unsubscribeIncoming && fn !== unsubscribeOutgoing,
-      )
-    }
-  }, [socialEnabled, activeUid])
-
-  useEffect(() => {
-    if (!socialEnabled || !activeUid) return
-
-    const incomingInvitesQuery = query(
-      collection(db, GAME_INVITES_COLLECTION),
-      where('toUid', '==', activeUid),
-    )
-    const outgoingInvitesQuery = query(
-      collection(db, GAME_INVITES_COLLECTION),
-      where('fromUid', '==', activeUid),
-    )
-
-    const unsubscribeIncoming = onSnapshot(
-      incomingInvitesQuery,
-      (snapshot) => {
-        const pendingInvites = []
-
-        snapshot.docs.forEach((docSnap) => {
-          const invite = { id: docSnap.id, ...docSnap.data() }
-          if (invite.status !== 'pending') return
-
-          const expiresAtMs = toMillis(invite.expiresAt)
-          if (expiresAtMs && Date.now() > expiresAtMs) {
-            expireInviteIfNeeded(invite.id, invite).catch(() => {})
-            return
-          }
-
-          pendingInvites.push(invite)
-        })
-
-        setSocialState((prev) => ({
-          ...prev,
-          incomingGameInvites: sortByNewest(pendingInvites),
-        }))
-      },
-      (error) => {
-        console.error('Incoming game invites listener failed:', error)
-      },
-    )
-
-    const unsubscribeOutgoing = onSnapshot(
-      outgoingInvitesQuery,
-      (snapshot) => {
-        const pendingInvites = []
-
-        snapshot.docs.forEach((docSnap) => {
-          const invite = { id: docSnap.id, ...docSnap.data() }
-          if (invite.status !== 'pending') return
-
-          const expiresAtMs = toMillis(invite.expiresAt)
-          if (expiresAtMs && Date.now() > expiresAtMs) {
-            expireInviteIfNeeded(invite.id, invite).catch(() => {})
-            return
-          }
-
-          pendingInvites.push(invite)
-        })
-
-        setSocialState((prev) => ({
-          ...prev,
-          outgoingGameInvites: sortByNewest(pendingInvites),
-        }))
-      },
-      (error) => {
-        console.error('Outgoing game invites listener failed:', error)
-      },
-    )
-
-    listenerUnsubsRef.current.push(unsubscribeIncoming, unsubscribeOutgoing)
-
-    return () => {
-      unsubscribeIncoming()
-      unsubscribeOutgoing()
-      listenerUnsubsRef.current = listenerUnsubsRef.current.filter(
-        (fn) => fn !== unsubscribeIncoming && fn !== unsubscribeOutgoing,
-      )
-    }
-  }, [socialEnabled, activeUid])
-
-  useEffect(() => {
-    friendListenerUnsubsRef.current.forEach((unsubscribe) => {
-      try {
-        unsubscribe()
-      } catch {
-        // noop
-      }
-    })
-    friendListenerUnsubsRef.current = []
-
-    const relatedTargetIds = Object.keys(socialState.relationEdges || {})
-    const trackedProfileIds = [...new Set([...socialState.friendIds, ...relatedTargetIds])]
-
-    if (!socialEnabled || trackedProfileIds.length === 0) {
-      setSocialState((prev) => ({
-        ...prev,
-        friendProfiles: {},
-        friendPresence: {},
-      }))
-      return
-    }
-
-    const keepMapForCurrentFriends = (map) => {
-      const next = {}
-      trackedProfileIds.forEach((id) => {
-        if (map[id]) next[id] = map[id]
-      })
-      return next
-    }
-
-    setSocialState((prev) => ({
-      ...prev,
-      friendProfiles: keepMapForCurrentFriends(prev.friendProfiles),
-      friendPresence: keepMapForCurrentFriends(prev.friendPresence),
-    }))
-
-    const unsubs = []
-
-    trackedProfileIds.forEach((friendUid) => {
-      const profileRef = doc(db, USERS_COLLECTION, friendUid)
-      const presenceRef = doc(db, PRESENCE_COLLECTION, friendUid)
-
-      const unsubscribeProfile = onSnapshot(profileRef, (snapshot) => {
-        setSocialState((prev) => {
-          const nextProfiles = { ...prev.friendProfiles }
-          if (snapshot.exists()) {
-            nextProfiles[friendUid] = { uid: friendUid, ...snapshot.data() }
-          } else {
-            nextProfiles[friendUid] = { uid: friendUid, displayName: 'Player' }
-          }
-          return {
-            ...prev,
-            friendProfiles: nextProfiles,
-          }
-        })
-      })
-
-      const unsubscribePresence = onSnapshot(presenceRef, (snapshot) => {
-        setSocialState((prev) => {
-          const nextPresence = { ...prev.friendPresence }
-          if (snapshot.exists()) {
-            nextPresence[friendUid] = snapshot.data()
-          } else {
-            delete nextPresence[friendUid]
-          }
-          return {
-            ...prev,
-            friendPresence: nextPresence,
-          }
-        })
-      })
-
-      unsubs.push(unsubscribeProfile, unsubscribePresence)
-    })
-
-    friendListenerUnsubsRef.current = unsubs
-
-    return () => {
-      unsubs.forEach((unsubscribe) => {
-        try {
-          unsubscribe()
-        } catch {
-          // noop
-        }
-      })
-      friendListenerUnsubsRef.current = []
-    }
-  }, [socialEnabled, socialState.friendIds, socialState.relationEdges])
+  }, [socialEnabled, activeUid, refreshState])
 
   useEffect(() => {
     if (!socialEnabled || !activeUid) {
@@ -530,21 +183,17 @@ export function SocialProvider({ children }) {
       return
     }
 
+    const mutedSenderIds = new Set([
+      ...socialState.friends.filter((friend) => friend.isMuted).map((friend) => friend.uid),
+      ...socialState.blockedUsers.filter((userEntry) => userEntry.isMuted).map((userEntry) => userEntry.uid),
+    ])
     const currentIds = new Set(socialState.incomingGameInvites.map((invite) => invite.id))
-    const mutedSenderIds = new Set(
-      Object.entries(socialState.relationEdges || {})
-        .filter(([, edge]) => edge?.muted)
-        .map(([targetUid]) => targetUid),
-    )
 
     if (!inviteInitialLoadDoneRef.current) {
-      // First snapshot after sign-in: populate known IDs without toasting.
-      // Show a single summary if there are already-pending invites.
       inviteInitialLoadDoneRef.current = true
       const visibleInviteCount = socialState.incomingGameInvites.filter((invite) => !mutedSenderIds.has(invite.fromUid)).length
       if (visibleInviteCount > 0) {
-        const count = visibleInviteCount
-        toast(`You have ${count} pending game invite${count > 1 ? 's' : ''}`)
+        toast(`You have ${visibleInviteCount} pending game invite${visibleInviteCount > 1 ? 's' : ''}`)
       }
     } else {
       socialState.incomingGameInvites.forEach((invite) => {
@@ -555,285 +204,156 @@ export function SocialProvider({ children }) {
     }
 
     knownInviteIdsRef.current = currentIds
-  }, [socialEnabled, activeUid, socialState.incomingGameInvites, socialState.relationEdges])
+  }, [socialEnabled, activeUid, socialState.incomingGameInvites, socialState.friends, socialState.blockedUsers])
 
-  useEffect(() => {
-    return () => {
-      clearListeners()
+  const runAction = useCallback(async (action, { refresh = true } = {}) => {
+    const result = await action()
+    if (refresh) {
+      await refreshState({ quiet: true }).catch(() => {})
     }
-  }, [clearListeners])
+    return result
+  }, [refreshState])
 
-  const friends = useMemo(() => {
-    return socialState.friendIds
-      .map((friendUid) => {
-        const profile = socialState.friendProfiles[friendUid] || { uid: friendUid, displayName: 'Player' }
-        const presence = socialState.friendPresence[friendUid] || null
-        const edge = socialState.relationEdges[friendUid] || null
+  const sendFriendRequestAction = useCallback(async (targetLookup) => {
+    if (!socialEnabled || !user) {
+      throw new Error('Sign in to use friends.')
+    }
+    return runAction(() => sendFriendRequest({ fromUser: user, targetLookup }))
+  }, [socialEnabled, user, runAction])
 
-        return {
-          uid: friendUid,
-          displayName: profile.displayName || 'Player',
-          username: getPreferredUsername(profile),
-          email: profile.email || null,
-          photoURL: profile.photoURL || null,
-          isOnline: isPresenceOnline(presence),
-          lastSeenAt: presence?.lastSeen || null,
-          currentRoomCode: presence?.currentRoomCode || null,
-          currentPhase: presence?.currentPhase || null,
-          gameType: presence?.gameType || null,
-          isBlocked: Boolean(edge?.blocked),
-          isMuted: Boolean(edge?.muted),
-        }
-      })
-      .sort((a, b) => {
-        if (a.isOnline !== b.isOnline) {
-          return a.isOnline ? -1 : 1
-        }
-        return a.displayName.localeCompare(b.displayName)
-      })
-  }, [socialState.friendIds, socialState.friendProfiles, socialState.friendPresence, socialState.relationEdges])
+  const claimUsernameAction = useCallback(async (nextUsername) => {
+    if (!socialEnabled || !user) {
+      throw new Error('Sign in to claim a username.')
+    }
+    return runAction(() => claimUsername({ user, username: nextUsername }))
+  }, [socialEnabled, user, runAction])
 
-  const blockedUsers = useMemo(() => {
-    return Object.entries(socialState.relationEdges || {})
-      .filter(([, edge]) => edge?.blocked)
-      .map(([targetUid, edge]) => {
-        const profile = socialState.friendProfiles[targetUid] || {}
-        return {
-          uid: targetUid,
-          displayName: profile.displayName || edge.targetDisplayName || 'Player',
-          username: getPreferredUsername(profile),
-          photoURL: profile.photoURL || edge.targetPhotoURL || null,
-          isBlocked: true,
-          isMuted: Boolean(edge?.muted),
-        }
-      })
-      .sort((a, b) => a.displayName.localeCompare(b.displayName))
-  }, [socialState.relationEdges, socialState.friendProfiles])
+  const acceptFriendRequestAction = useCallback(async (requestId) => {
+    if (!socialEnabled || !activeUid) {
+      throw new Error('Sign in to use friends.')
+    }
+    return runAction(() => acceptFriendRequest({ requestId }))
+  }, [socialEnabled, activeUid, runAction])
 
-  const sendFriendRequestAction = useCallback(
-    async (targetLookup) => {
-      if (!socialEnabled || !activeUid) {
-        throw new Error('Sign in with Google to use friends.')
-      }
+  const declineFriendRequestAction = useCallback(async (requestId) => {
+    if (!socialEnabled || !activeUid) {
+      throw new Error('Sign in to use friends.')
+    }
+    return runAction(() => declineFriendRequest({ requestId }))
+  }, [socialEnabled, activeUid, runAction])
 
-      return sendFriendRequest({
-        fromUser: user,
-        targetLookup,
-      })
-    },
-    [socialEnabled, activeUid, user],
-  )
+  const cancelFriendRequestAction = useCallback(async (requestId) => {
+    if (!socialEnabled || !activeUid) {
+      throw new Error('Sign in to use friends.')
+    }
+    return runAction(() => cancelFriendRequest({ requestId }))
+  }, [socialEnabled, activeUid, runAction])
 
-  const claimUsernameAction = useCallback(
-    async (nextUsername) => {
-      if (!socialEnabled || !activeUid) {
-        throw new Error('Sign in with Google to claim a username.')
-      }
+  const removeFriendAction = useCallback(async (friendUid) => {
+    if (!socialEnabled || !activeUid) {
+      throw new Error('Sign in to use friends.')
+    }
+    return runAction(() => removeFriend({ friendUid }))
+  }, [socialEnabled, activeUid, runAction])
 
-      return claimUsername({
-        user,
-        username: nextUsername,
-      })
-    },
-    [socialEnabled, activeUid, user],
-  )
+  const sendGameInviteAction = useCallback(async ({ toUid, roomCode, gameType, maxPlayers, message }) => {
+    if (!socialEnabled || !user) {
+      throw new Error('Sign in to use friends.')
+    }
+    return runAction(() => sendGameInvite({ fromUser: user, toUid, roomCode, gameType, maxPlayers, message }))
+  }, [socialEnabled, user, runAction])
 
-  const acceptFriendRequestAction = useCallback(
-    async (requestId) => {
-      if (!socialEnabled || !activeUid) {
-        throw new Error('Sign in with Google to use friends.')
-      }
+  const acceptGameInviteAction = useCallback(async (inviteId) => {
+    if (!socialEnabled || !activeUid) {
+      throw new Error('Sign in to use friends.')
+    }
+    return runAction(() => acceptGameInvite({ inviteId }))
+  }, [socialEnabled, activeUid, runAction])
 
-      return acceptFriendRequest({
-        requestId,
-        currentUid: activeUid,
-      })
-    },
-    [socialEnabled, activeUid],
-  )
+  const declineGameInviteAction = useCallback(async (inviteId) => {
+    if (!socialEnabled || !activeUid) {
+      throw new Error('Sign in to use friends.')
+    }
+    return runAction(() => declineGameInvite({ inviteId }))
+  }, [socialEnabled, activeUid, runAction])
 
-  const declineFriendRequestAction = useCallback(
-    async (requestId) => {
-      if (!socialEnabled || !activeUid) {
-        throw new Error('Sign in with Google to use friends.')
-      }
+  const cancelGameInviteAction = useCallback(async (inviteId) => {
+    if (!socialEnabled || !activeUid) {
+      throw new Error('Sign in to use friends.')
+    }
+    return runAction(() => cancelGameInvite({ inviteId }))
+  }, [socialEnabled, activeUid, runAction])
 
-      return declineFriendRequest({
-        requestId,
-        currentUid: activeUid,
-      })
-    },
-    [socialEnabled, activeUid],
-  )
+  const setUserMutedAction = useCallback(async (targetUser, muted) => {
+    if (!socialEnabled || !activeUid) {
+      throw new Error('Sign in to use social controls.')
+    }
+    const friendEntry = socialState.friends.find((friend) => friend.uid === targetUser?.uid)
+    return runAction(() => setSocialEdge({
+      targetUser,
+      blocked: Boolean(friendEntry?.isBlocked || targetUser?.isBlocked),
+      muted,
+    }))
+  }, [socialEnabled, activeUid, socialState.friends, runAction])
 
-  const cancelFriendRequestAction = useCallback(
-    async (requestId) => {
-      if (!socialEnabled || !activeUid) {
-        throw new Error('Sign in with Google to use friends.')
-      }
+  const setUserBlockedAction = useCallback(async (targetUser, blocked) => {
+    if (!socialEnabled || !activeUid) {
+      throw new Error('Sign in to use social controls.')
+    }
+    const friendEntry = socialState.friends.find((friend) => friend.uid === targetUser?.uid)
+    return runAction(() => setSocialEdge({
+      targetUser,
+      blocked,
+      muted: blocked ? true : Boolean(friendEntry?.isMuted || targetUser?.isMuted),
+    }))
+  }, [socialEnabled, activeUid, socialState.friends, runAction])
 
-      return cancelFriendRequest({
-        requestId,
-        currentUid: activeUid,
-      })
-    },
-    [socialEnabled, activeUid],
-  )
-
-  const removeFriendAction = useCallback(
-    async (friendUid) => {
-      if (!socialEnabled || !activeUid) {
-        throw new Error('Sign in with Google to use friends.')
-      }
-
-      return removeFriend({
-        uid: activeUid,
-        friendUid,
-      })
-    },
-    [socialEnabled, activeUid],
-  )
-
-  const sendGameInviteAction = useCallback(
-    async ({ toUid, roomCode, gameType, maxPlayers, message }) => {
-      if (!socialEnabled || !activeUid) {
-        throw new Error('Sign in with Google to use friends.')
-      }
-
-      return sendGameInvite({
-        fromUser: user,
-        toUid,
-        roomCode,
-        gameType,
-        maxPlayers,
-        message,
-      })
-    },
-    [socialEnabled, activeUid, user],
-  )
-
-  const acceptGameInviteAction = useCallback(
-    async (inviteId) => {
-      if (!socialEnabled || !activeUid) {
-        throw new Error('Sign in with Google to use friends.')
-      }
-
-      return acceptGameInvite({
-        inviteId,
-        currentUid: activeUid,
-      })
-    },
-    [socialEnabled, activeUid],
-  )
-
-  const declineGameInviteAction = useCallback(
-    async (inviteId) => {
-      if (!socialEnabled || !activeUid) {
-        throw new Error('Sign in with Google to use friends.')
-      }
-
-      return declineGameInvite({
-        inviteId,
-        currentUid: activeUid,
-      })
-    },
-    [socialEnabled, activeUid],
-  )
-
-  const cancelGameInviteAction = useCallback(
-    async (inviteId) => {
-      if (!socialEnabled || !activeUid) {
-        throw new Error('Sign in with Google to use friends.')
-      }
-
-      return cancelGameInvite({
-        inviteId,
-        currentUid: activeUid,
-      })
-    },
-    [socialEnabled, activeUid],
-  )
-
-  const setUserMutedAction = useCallback(
-    async (targetUser, muted) => {
-      if (!socialEnabled || !activeUid) {
-        throw new Error('Sign in with Google to use social controls.')
-      }
-
-      const existingEdge = socialState.relationEdges[targetUser?.uid] || null
-      return setSocialEdge({
-        ownerUser: user,
-        targetUser,
-        blocked: Boolean(existingEdge?.blocked),
-        muted,
-      })
-    },
-    [socialEnabled, activeUid, socialState.relationEdges, user],
-  )
-
-  const setUserBlockedAction = useCallback(
-    async (targetUser, blocked) => {
-      if (!socialEnabled || !activeUid) {
-        throw new Error('Sign in with Google to use social controls.')
-      }
-
-      const existingEdge = socialState.relationEdges[targetUser?.uid] || null
-      return setSocialEdge({
-        ownerUser: user,
-        targetUser,
-        blocked,
-        muted: blocked ? true : Boolean(existingEdge?.muted),
-      })
-    },
-    [socialEnabled, activeUid, socialState.relationEdges, user],
-  )
-
-  const value = useMemo(
-    () => ({
-      enabled: socialEnabled,
-      profile: socialState.selfProfile,
-      friends,
-      blockedUsers,
-      incomingFriendRequests: socialState.incomingFriendRequests,
-      outgoingFriendRequests: socialState.outgoingFriendRequests,
-      incomingGameInvites: socialState.incomingGameInvites,
-      outgoingGameInvites: socialState.outgoingGameInvites,
-      claimUsername: claimUsernameAction,
-      sendFriendRequest: sendFriendRequestAction,
-      acceptFriendRequest: acceptFriendRequestAction,
-      declineFriendRequest: declineFriendRequestAction,
-      cancelFriendRequest: cancelFriendRequestAction,
-      removeFriend: removeFriendAction,
-      sendGameInvite: sendGameInviteAction,
-      acceptGameInvite: acceptGameInviteAction,
-      declineGameInvite: declineGameInviteAction,
-      cancelGameInvite: cancelGameInviteAction,
-      setUserMuted: setUserMutedAction,
-      setUserBlocked: setUserBlockedAction,
-    }),
-    [
-      socialEnabled,
-      socialState.selfProfile,
-      friends,
-      blockedUsers,
-      socialState.incomingFriendRequests,
-      socialState.outgoingFriendRequests,
-      socialState.incomingGameInvites,
-      socialState.outgoingGameInvites,
-      claimUsernameAction,
-      sendFriendRequestAction,
-      acceptFriendRequestAction,
-      declineFriendRequestAction,
-      cancelFriendRequestAction,
-      removeFriendAction,
-      sendGameInviteAction,
-      acceptGameInviteAction,
-      declineGameInviteAction,
-      cancelGameInviteAction,
-      setUserMutedAction,
-      setUserBlockedAction,
-    ],
-  )
+  const value = useMemo(() => ({
+    enabled: socialEnabled,
+    profile: socialState.profile,
+    friends: socialState.friends,
+    blockedUsers: socialState.blockedUsers,
+    incomingFriendRequests: socialState.incomingFriendRequests,
+    outgoingFriendRequests: socialState.outgoingFriendRequests,
+    incomingGameInvites: socialState.incomingGameInvites,
+    outgoingGameInvites: socialState.outgoingGameInvites,
+    refresh: refreshState,
+    findUserByLookup,
+    claimUsername: claimUsernameAction,
+    sendFriendRequest: sendFriendRequestAction,
+    acceptFriendRequest: acceptFriendRequestAction,
+    declineFriendRequest: declineFriendRequestAction,
+    cancelFriendRequest: cancelFriendRequestAction,
+    removeFriend: removeFriendAction,
+    sendGameInvite: sendGameInviteAction,
+    acceptGameInvite: acceptGameInviteAction,
+    declineGameInvite: declineGameInviteAction,
+    cancelGameInvite: cancelGameInviteAction,
+    setUserMuted: setUserMutedAction,
+    setUserBlocked: setUserBlockedAction,
+  }), [
+    socialEnabled,
+    socialState.profile,
+    socialState.friends,
+    socialState.blockedUsers,
+    socialState.incomingFriendRequests,
+    socialState.outgoingFriendRequests,
+    socialState.incomingGameInvites,
+    socialState.outgoingGameInvites,
+    refreshState,
+    claimUsernameAction,
+    sendFriendRequestAction,
+    acceptFriendRequestAction,
+    declineFriendRequestAction,
+    cancelFriendRequestAction,
+    removeFriendAction,
+    sendGameInviteAction,
+    acceptGameInviteAction,
+    declineGameInviteAction,
+    cancelGameInviteAction,
+    setUserMutedAction,
+    setUserBlockedAction,
+  ])
 
   return (
     <SocialContext.Provider value={value}>

@@ -18,9 +18,8 @@ export function SocketProvider({ children }) {
   const socketRef = useRef(null)
 
   useEffect(() => {
-    // Use Firebase UID if logged in, otherwise fall back to stored playerId
     const authPlayerId = user?.uid || playerId
-    const needsVerifiedToken = Boolean(user && !user.isGuest)
+    const needsVerifiedToken = Boolean(idToken)
 
     if (needsVerifiedToken && !idToken) {
       return undefined

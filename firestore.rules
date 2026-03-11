@@ -17,10 +17,9 @@ service cloud.firestore {
     }
 
     function isFriendshipParty(data) {
-      return signedIn() && (
-        data.userA == request.auth.uid ||
-        data.userB == request.auth.uid
-      );
+      return signedIn()
+        && data.users is list
+        && request.auth.uid in data.users;
     }
 
     function isPartyMember(data) {

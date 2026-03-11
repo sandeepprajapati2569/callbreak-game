@@ -112,10 +112,22 @@ export default function LandingPage() {
     }
   }
 
-  const handleGuestSignIn = () => {
+  const handleGuestSignIn = async () => {
     if (!guestName.trim()) return
-    signInAsGuest(guestName.trim())
-    toast.success(`Welcome, ${guestName.trim()}!`)
+    setSigningIn(true)
+    try {
+      const guestSession = await signInAsGuest(guestName.trim())
+      if (guestSession?.authMode === 'local') {
+        toast.success(`Welcome, ${guestName.trim()}!`)
+        toast('Guest social features need Firebase Anonymous Auth enabled.')
+      } else {
+        toast.success(`Welcome, ${guestName.trim()}!`)
+      }
+    } catch {
+      toast.error('Guest sign-in failed. Please try again.')
+    } finally {
+      setSigningIn(false)
+    }
   }
 
   const handleSignOut = async () => {
@@ -311,7 +323,7 @@ export default function LandingPage() {
 
   const handleCreateParty = async () => {
     if (!partyEnabled) {
-      toast.error('Sign in with Google to create a party')
+      toast.error('Sign in to create a party')
       return
     }
     try {
