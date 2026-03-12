@@ -192,7 +192,7 @@ export default function LobbyPage() {
   const landscapeGridClass = { 2: 'grid-cols-2', 3: 'grid-cols-3', 4: 'grid-cols-4', 5: 'grid-cols-5' }[maxPlayers] || 'grid-cols-4'
   const partyMembers = party?.members || []
   const connectedPartyMembers = partyMembers.filter((member) => member.connected)
-  const isPartyQueueing = party?.status === 'queueing'
+  const isPartyQueueing = party?.status === 'queueing' || Boolean(party?.matchmaking?.queueKey || party?.matchmaking?.queuedAt)
   const partyQueue = party?.matchmaking || null
   const canPartyLaunch = Boolean(
     party
@@ -257,7 +257,7 @@ export default function LobbyPage() {
                 <div key={member.uid} className="rounded-xl border border-white/10 bg-black/20 px-3 py-3 flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-sm font-semibold truncate flex items-center gap-2">
-                      {member.role === 'leader' && <Crown size={14} style={{ color: 'var(--gold)' }} />}
+                      {member.uid === party.leaderUid && <Crown size={14} style={{ color: 'var(--gold)' }} />}
                       <span>{member.name || 'Player'}</span>
                     </p>
                     <p className="text-[11px] opacity-55 truncate">
@@ -317,6 +317,12 @@ export default function LobbyPage() {
                 </>
               )}
             </div>
+
+            <p className="text-xs opacity-55">
+              {isPartyLeader
+                ? 'Only the party leader can launch or cancel matchmaking.'
+                : 'Only the party leader can launch or cancel matchmaking. You can only set your ready state.'}
+            </p>
 
             {socialEnabled && (
               <div className="rounded-xl border border-white/10 bg-black/25 p-3 sm:p-4 flex flex-col gap-3">

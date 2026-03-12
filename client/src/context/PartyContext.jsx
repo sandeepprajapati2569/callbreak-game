@@ -246,9 +246,11 @@ export function PartyProvider({ children }) {
   const launchPrivateRoom = useCallback(async () => {
     setBusyKey('party:launch:private')
     try {
-      return await emitWithAck('party:launch:private-room', {
+      const response = await emitWithAck('party:launch:private-room', {
         actionId: randomActionId('party_launch_private'),
       })
+      if (response.party) setParty(response.party)
+      return response
     } finally {
       setBusyKey('')
     }
@@ -257,9 +259,11 @@ export function PartyProvider({ children }) {
   const launchMatchmaking = useCallback(async () => {
     setBusyKey('party:launch:matchmaking')
     try {
-      return await emitWithAck('party:launch:matchmaking', {
+      const response = await emitWithAck('party:launch:matchmaking', {
         actionId: randomActionId('party_launch_matchmaking'),
       })
+      if (response.party) setParty(response.party)
+      return response
     } finally {
       setBusyKey('')
     }

@@ -696,7 +696,7 @@ export default function LandingPage() {
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
-                        {member.role === 'leader' && <Crown size={13} className="text-[var(--gold)] shrink-0" />}
+                        {member.uid === party.leaderUid && <Crown size={13} className="text-[var(--gold)] shrink-0" />}
                         <p className="text-sm font-medium truncate">{member.name || 'Player'}</p>
                       </div>
                       <p className="text-xs opacity-55 truncate">{member.uid === user?.uid ? 'You' : 'Party member'}</p>

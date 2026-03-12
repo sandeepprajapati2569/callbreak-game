@@ -222,7 +222,8 @@ function logPartyMetric(eventName, party, extra = {}) {
 
 function refreshPartyStatus(party) {
   if (!party) return;
-  if (party.status === 'in_match' || party.status === 'launching' || party.status === 'queueing' || party.status === 'disbanded') return;
+  if (party.status === 'in_match' || party.status === 'launching' || party.status === 'disbanded') return;
+  if (party.status === 'queueing' && party.matchmaking) return;
   const connected = party.getConnectedMembers();
   const allConnectedReady = connected.length > 0 && connected.every((member) => member.ready);
   party.setStatus(allConnectedReady ? 'ready' : 'forming');
