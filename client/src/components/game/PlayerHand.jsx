@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import toast from 'react-hot-toast'
 import { useSocket } from '../../context/SocketContext'
@@ -7,7 +7,7 @@ import { useOrientation } from '../../hooks/useOrientation'
 import Card from './Card'
 
 const SUIT_ORDER = { spades: 0, hearts: 1, diamonds: 2, clubs: 3 }
-const RANK_VALUES = { '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14 }
+const RANK_VALUES = { '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, J: 11, Q: 12, K: 13, A: 14 }
 const PLAY_CARD_ACK_TIMEOUT_MS = 7000
 
 function cardSortValue(card) {
@@ -20,7 +20,7 @@ export default function PlayerHand() {
   const { socket, isConnected } = useSocket()
   const { state } = useGame()
   const { myHand, myTurn, playableCards, phase } = state
-  const { width: windowWidth, isMobile, isLandscapeMobile } = useOrientation()
+  const { width: windowWidth, layoutTier } = useOrientation()
   const [pendingCardKey, setPendingCardKey] = useState(null)
   const pendingCardRef = useRef(null)
   const pendingToastShownRef = useRef(false)
@@ -30,13 +30,13 @@ export default function PlayerHand() {
   }, [myHand])
 
   const playableSet = useMemo(() => {
-    return new Set(playableCards.map((c) => `${c.suit}-${c.rank}`))
+    return new Set(playableCards.map((card) => `${card.suit}-${card.rank}`))
   }, [playableCards])
 
-  const hasPendingCardInHand = pendingCardKey
-    ? myHand.some((card) => `${card.suit}-${card.rank}` === pendingCardKey)
-    : false
-  const isActionLocked = Boolean(pendingCardKey && myTurn && phase === 'PLAYING' && hasPendingCardInHand)
+  const isCompactLandscape = layoutTier === 'compactLandscape'
+  const isCompactPortrait = layoutTier === 'compactPortrait'
+  const isWideLayout = layoutTier === 'wide'
+  const isLandscapeBidding = isCompactLandscape && phase === 'BIDDING'
 
   const handlePlayCard = (card) => {
     if (!socket || !myTurn || phase !== 'PLAYING') return
@@ -49,7 +49,6 @@ export default function PlayerHand() {
       return
     }
 
-    // Unlock stale pending state if turn/hand changed before ack callback.
     if (pendingCardRef.current) {
       const stillPending = myTurn
         && phase === 'PLAYING'
@@ -62,7 +61,6 @@ export default function PlayerHand() {
       }
     }
 
-    // One in-flight play only, to prevent duplicate taps on slow networks.
     if (pendingCardRef.current) {
       if (!pendingToastShownRef.current) {
         toast('Sending your move...')
@@ -95,80 +93,70 @@ export default function PlayerHand() {
   }
 
   const cardCount = sortedHand.length
-  const isLandscapeBidding = isLandscapeMobile && phase === 'BIDDING'
-
-  // Dynamic layout: calculate overlap and scale to fit screen
-  const padding = isLandscapeBidding ? 20 : isMobile ? 16 : 32
-  const availableWidth = windowWidth - padding
-  const cardWidthPx = isLandscapeBidding ? 56 : isMobile ? 62 : isLandscapeMobile ? 56 : 80
-
-  // Comfortable step (visible portion per card) for readable cards
-  const comfortableStep = isLandscapeBidding ? 34 : isMobile ? 24 : isLandscapeMobile ? 24 : 30
+  const padding = isCompactLandscape ? 20 : isCompactPortrait ? 16 : 28
+  const availableWidth = Math.max(220, windowWidth - padding)
+  const cardWidthPx = isCompactLandscape ? 56 : isCompactPortrait ? 62 : isWideLayout ? 80 : 72
+  const comfortableStep = isLandscapeBidding ? 34 : isCompactLandscape ? 26 : isCompactPortrait ? 24 : isWideLayout ? 34 : 30
   const neededWidth = cardCount <= 1
     ? cardWidthPx
     : cardWidthPx + (cardCount - 1) * comfortableStep
-
-  // Scale the hand down if it exceeds available width.
-  const minScale = isLandscapeBidding ? 0.78 : 0.65
+  const minScale = isLandscapeBidding ? 0.8 : isCompactLandscape ? 0.72 : 0.68
   const handScale = Math.max(minScale, Math.min(1, availableWidth / neededWidth))
-
-  // Spread angle also reduced for large hands
-  const maxSpread = isLandscapeBidding ? 7 : isMobile ? 20 : isLandscapeMobile ? 25 : 35
+  const maxSpread = isLandscapeBidding ? 8 : isCompactLandscape ? 18 : isCompactPortrait ? 24 : isWideLayout ? 40 : 32
   const spreadAngle = cardCount <= 1
     ? 0
-    : Math.min(maxSpread, cardCount * (isLandscapeBidding ? 0.55 : isMobile ? 1.2 : isLandscapeMobile ? 1.5 : 2))
-
-  // Negative margin = card width - step
+    : Math.min(maxSpread, cardCount * (isCompactLandscape ? 0.95 : isCompactPortrait ? 1.35 : 1.8))
   const negativeMargin = cardCount <= 1 ? 0 : cardWidthPx - comfortableStep
-
-  // If cards still overflow after scaling, enable horizontal scroll.
   const needsScroll = neededWidth * handScale > availableWidth
   const trayLabel = phase === 'BIDDING'
     ? 'Review your hand'
     : myTurn && phase === 'PLAYING'
       ? 'Play a card'
       : `${cardCount} cards in hand`
+  const hasPendingCardInHand = pendingCardKey
+    ? myHand.some((card) => `${card.suit}-${card.rank}` === pendingCardKey)
+    : false
+  const isActionLocked = Boolean(pendingCardKey && myTurn && phase === 'PLAYING' && hasPendingCardInHand)
+  const minHeight = isCompactLandscape ? '98px' : isCompactPortrait ? '132px' : isWideLayout ? '170px' : '152px'
+  const trayPaddingBottom = isCompactLandscape
+    ? 'max(6px, var(--game-safe-bottom))'
+    : 'max(12px, var(--game-safe-bottom))'
 
   return (
     <div
-      className={`relative flex justify-center items-end px-2 sm:px-4 hand-fan ${needsScroll ? 'scrollbar-hide overflow-x-auto' : ''}`}
+      className={`game-hand-tray relative ${needsScroll ? 'overflow-x-auto scrollbar-hide' : ''}`}
       style={{
-        minHeight: isLandscapeBidding ? '98px' : isMobile ? '110px' : isLandscapeMobile ? '85px' : '140px',
-        paddingBottom: isLandscapeBidding
-          ? 'max(4px, env(safe-area-inset-bottom, 2px))'
-          : isMobile
-            ? 'max(12px, env(safe-area-inset-bottom, 12px))'
-            : isLandscapeMobile
-              ? '4px'
-              : '12px',
+        minHeight,
+        paddingBottom: trayPaddingBottom,
       }}
     >
       <div
-        className="pointer-events-none absolute inset-x-1 sm:inset-x-6 bottom-0 top-4 rounded-t-[28px] border"
+        className="pointer-events-none absolute inset-x-0 bottom-0 top-4 rounded-t-[30px] border"
         style={{
-          borderColor: 'rgba(212, 175, 55, 0.16)',
-          background: 'linear-gradient(180deg, rgba(6, 30, 19, 0.12), rgba(6, 24, 16, 0.55) 40%, rgba(4, 14, 10, 0.78) 100%)',
-          boxShadow: '0 -10px 40px rgba(0,0,0,0.22)',
+          borderColor: 'rgba(212, 175, 55, 0.18)',
+          background: 'linear-gradient(180deg, rgba(6, 30, 19, 0.16), rgba(6, 24, 16, 0.62) 42%, rgba(4, 14, 10, 0.82) 100%)',
+          boxShadow: '0 -12px 42px rgba(0,0,0,0.24)',
         }}
       />
-      <div
-        className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2 game-pill px-3 py-1"
-        style={{
-          background: 'rgba(4, 18, 12, 0.88)',
-          boxShadow: '0 8px 20px rgba(0,0,0,0.18)',
-        }}
-      >
-        <span className="text-[9px] sm:text-[10px] uppercase tracking-[0.24em] opacity-55">
+      <div className="pointer-events-none absolute inset-x-6 top-4 h-px bg-[linear-gradient(90deg,rgba(255,255,255,0),rgba(240,208,96,0.58),rgba(255,255,255,0))]" />
+      <div className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2">
+        <span
+          className="game-pill px-3 py-1 text-[9px] uppercase tracking-[0.24em]"
+          style={{
+            background: 'rgba(4, 18, 12, 0.9)',
+            boxShadow: '0 10px 24px rgba(0,0,0,0.18)',
+          }}
+        >
           {trayLabel}
         </span>
       </div>
 
       <div
-        className="relative flex justify-center items-end pt-5 sm:pt-6"
+        className="relative flex justify-center items-end px-2 pt-6 sm:px-4"
         style={{
           transform: handScale < 1 ? `scale(${handScale})` : undefined,
           transformOrigin: 'bottom center',
-          minWidth: needsScroll ? `${neededWidth * handScale}px` : undefined,
+          minWidth: needsScroll ? `${Math.ceil(neededWidth * handScale)}px` : undefined,
         }}
       >
         <AnimatePresence mode="popLayout">
@@ -177,16 +165,14 @@ export default function PlayerHand() {
             const isPlayable = myTurn && phase === 'PLAYING' && playableSet.has(cardKey) && !isActionLocked
             const isNotPlayableOnTurn = myTurn && phase === 'PLAYING' && !playableSet.has(cardKey)
             const isPendingCard = pendingCardKey === cardKey
-
-            // Fan positioning
             const mid = (cardCount - 1) / 2
             const offset = index - mid
             const angle = (offset / Math.max(cardCount - 1, 1)) * spreadAngle
             const rawYOffset = Math.abs(offset) * Math.abs(offset) * 1.2
-            const yOffset = isLandscapeBidding
-              ? Math.min(rawYOffset, 2)
-              : isMobile
-                ? Math.min(rawYOffset, 6)
+            const yOffset = isCompactLandscape
+              ? Math.min(rawYOffset, 4)
+              : isCompactPortrait
+                ? Math.min(rawYOffset, 8)
                 : Math.min(rawYOffset, 20)
 
             return (
@@ -221,7 +207,7 @@ export default function PlayerHand() {
                   faceUp={true}
                   playable={isPlayable}
                   onClick={() => handlePlayCard(card)}
-                  medium={isLandscapeMobile}
+                  medium={isCompactLandscape}
                 />
               </motion.div>
             )

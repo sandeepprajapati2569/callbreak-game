@@ -1,49 +1,62 @@
-import { useState, useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useGame } from '../../context/GameContext'
 import { useOrientation } from '../../hooks/useOrientation'
 import Card from './Card'
 
-// Offsets for card positions relative to center, based on relative player position
-function getOffsets({ isMobile, isLandscapeMobile }) {
-  if (isMobile) {
+function getOffsets(layoutTier) {
+  if (layoutTier === 'compactLandscape') {
     return {
-      bottom: { x: 0, y: 28, fromX: 0, fromY: 80 },
-      top: { x: 0, y: -28, fromX: 0, fromY: -80 },
-      left: { x: -40, y: 0, fromX: -100, fromY: 0 },
-      right: { x: 40, y: 0, fromX: 100, fromY: 0 },
-      'top-left': { x: -30, y: -22, fromX: -70, fromY: -60 },
-      'top-right': { x: 30, y: -22, fromX: 70, fromY: -60 },
-      'bottom-left': { x: -30, y: 22, fromX: -70, fromY: 60 },
-      'bottom-right': { x: 30, y: 22, fromX: 70, fromY: 60 },
+      bottom: { x: 0, y: 34, fromX: 0, fromY: 76 },
+      top: { x: 0, y: -34, fromX: 0, fromY: -76 },
+      left: { x: -66, y: 0, fromX: -132, fromY: 0 },
+      right: { x: 66, y: 0, fromX: 132, fromY: 0 },
+      'top-left': { x: -48, y: -26, fromX: -88, fromY: -58 },
+      'top-right': { x: 48, y: -26, fromX: 88, fromY: -58 },
+      'bottom-left': { x: -48, y: 26, fromX: -88, fromY: 58 },
+      'bottom-right': { x: 48, y: 26, fromX: 88, fromY: 58 },
     }
   }
-  if (isLandscapeMobile) {
+
+  if (layoutTier === 'compactPortrait') {
     return {
-      bottom: { x: 0, y: 24, fromX: 0, fromY: 80 },
-      top: { x: 0, y: -24, fromX: 0, fromY: -80 },
-      left: { x: -50, y: 0, fromX: -130, fromY: 0 },
-      right: { x: 50, y: 0, fromX: 130, fromY: 0 },
-      'top-left': { x: -35, y: -20, fromX: -90, fromY: -60 },
-      'top-right': { x: 35, y: -20, fromX: 90, fromY: -60 },
-      'bottom-left': { x: -35, y: 20, fromX: -90, fromY: 60 },
-      'bottom-right': { x: 35, y: 20, fromX: 90, fromY: 60 },
+      bottom: { x: 0, y: 42, fromX: 0, fromY: 94 },
+      top: { x: 0, y: -42, fromX: 0, fromY: -94 },
+      left: { x: -58, y: 0, fromX: -120, fromY: 0 },
+      right: { x: 58, y: 0, fromX: 120, fromY: 0 },
+      'top-left': { x: -42, y: -30, fromX: -82, fromY: -66 },
+      'top-right': { x: 42, y: -30, fromX: 82, fromY: -66 },
+      'bottom-left': { x: -42, y: 30, fromX: -82, fromY: 66 },
+      'bottom-right': { x: 42, y: 30, fromX: 82, fromY: 66 },
     }
   }
+
+  if (layoutTier === 'wide') {
+    return {
+      bottom: { x: 0, y: 52, fromX: 0, fromY: 126 },
+      top: { x: 0, y: -52, fromX: 0, fromY: -126 },
+      left: { x: -86, y: 0, fromX: -176, fromY: 0 },
+      right: { x: 86, y: 0, fromX: 176, fromY: 0 },
+      'top-left': { x: -64, y: -36, fromX: -128, fromY: -78 },
+      'top-right': { x: 64, y: -36, fromX: 128, fromY: -78 },
+      'bottom-left': { x: -64, y: 36, fromX: -128, fromY: 78 },
+      'bottom-right': { x: 64, y: 36, fromX: 128, fromY: 78 },
+    }
+  }
+
   return {
-    bottom: { x: 0, y: 40, fromX: 0, fromY: 120 },
-    top: { x: 0, y: -40, fromX: 0, fromY: -120 },
-    left: { x: -60, y: 0, fromX: -160, fromY: 0 },
-    right: { x: 60, y: 0, fromX: 160, fromY: 0 },
-    'top-left': { x: -45, y: -30, fromX: -120, fromY: -80 },
-    'top-right': { x: 45, y: -30, fromX: 120, fromY: -80 },
-    'bottom-left': { x: -45, y: 30, fromX: -120, fromY: 80 },
-    'bottom-right': { x: 45, y: 30, fromX: 120, fromY: 80 },
+    bottom: { x: 0, y: 48, fromX: 0, fromY: 112 },
+    top: { x: 0, y: -48, fromX: 0, fromY: -112 },
+    left: { x: -74, y: 0, fromX: -152, fromY: 0 },
+    right: { x: 74, y: 0, fromX: 152, fromY: 0 },
+    'top-left': { x: -56, y: -34, fromX: -116, fromY: -72 },
+    'top-right': { x: 56, y: -34, fromX: 116, fromY: -72 },
+    'bottom-left': { x: -56, y: 34, fromX: -116, fromY: 72 },
+    'bottom-right': { x: 56, y: 34, fromX: 116, fromY: 72 },
   }
 }
 
-// Midpoint between card's resting position and winner's from position (not all the way to edge)
-function getCollectTarget(offset, winnerOffset) {
+function getCollectTarget(winnerOffset) {
   return {
     x: winnerOffset.fromX * 0.65,
     y: winnerOffset.fromY * 0.65,
@@ -53,25 +66,27 @@ function getCollectTarget(offset, winnerOffset) {
 export default function TrickArea({ positionedPlayers }) {
   const { state } = useGame()
   const { trickCards, trickWinner } = state
-  const { isMobile, isLandscapeMobile } = useOrientation()
-  const [animPhase, setAnimPhase] = useState('idle') // 'idle' | 'glow' | 'collect'
+  const { layoutTier } = useOrientation()
+  const [animPhase, setAnimPhase] = useState('idle')
   const [winnerPosition, setWinnerPosition] = useState(null)
   const prevWinnerRef = useRef(null)
 
-  // Map player IDs to positions
-  const playerPositionMap = {}
-  if (positionedPlayers) {
-    positionedPlayers.forEach((p) => {
-      playerPositionMap[p.id] = p.position
-    })
-  }
+  const playerPositionMap = useMemo(() => {
+    const nextMap = {}
 
-  // Animation phases: idle → glow (winner highlight) → collect (fly to winner) → idle (cleared)
+    if (positionedPlayers) {
+      positionedPlayers.forEach((player) => {
+        nextMap[player.id] = player.position
+      })
+    }
+
+    return nextMap
+  }, [positionedPlayers])
+
   useEffect(() => {
     if (trickWinner && trickWinner !== prevWinnerRef.current) {
       prevWinnerRef.current = trickWinner
-      const pos = playerPositionMap[trickWinner] || 'bottom'
-      setWinnerPosition(pos)
+      setWinnerPosition(playerPositionMap[trickWinner] || 'bottom')
       setAnimPhase('glow')
 
       const collectTimer = setTimeout(() => {
@@ -79,50 +94,64 @@ export default function TrickArea({ positionedPlayers }) {
       }, 600)
 
       return () => clearTimeout(collectTimer)
-    } else if (!trickWinner) {
+    }
+
+    if (!trickWinner) {
       prevWinnerRef.current = null
       setAnimPhase('idle')
       setWinnerPosition(null)
     }
-  }, [trickWinner])
+  }, [playerPositionMap, trickWinner])
+
+  const sizeClass = {
+    compactLandscape: 'w-[min(68vw,360px)] h-[min(36vh,168px)]',
+    compactPortrait: 'w-[min(88vw,320px)] h-[min(30vh,188px)]',
+    medium: 'w-[min(76vw,420px)] h-[min(32vh,220px)]',
+    wide: 'w-[min(50vw,500px)] h-[min(34vh,250px)]',
+  }[layoutTier]
+
+  const offsets = getOffsets(layoutTier)
 
   return (
-    <div className={`relative flex items-center justify-center ${
-      isLandscapeMobile ? 'w-40 h-24' : isMobile ? 'w-36 h-28' : 'w-48 h-40'
-    }`}>
+    <div className={`game-floating-sheet relative flex items-center justify-center overflow-hidden rounded-[30px] ${sizeClass}`}>
       <div
-        className="pointer-events-none absolute inset-0 rounded-[42%] border"
+        className="pointer-events-none absolute inset-0"
         style={{
-          borderColor: 'rgba(212, 175, 55, 0.14)',
-          background: 'radial-gradient(circle at center, rgba(255,255,255,0.05) 0%, rgba(12,58,36,0.28) 55%, rgba(0,0,0,0) 100%)',
-          boxShadow: 'inset 0 0 30px rgba(0,0,0,0.18)',
+          background: 'radial-gradient(circle at center, rgba(212,175,55,0.12) 0%, rgba(14,74,46,0.18) 35%, rgba(0,0,0,0) 72%)',
         }}
       />
       <div
-        className="pointer-events-none absolute inset-[14%] rounded-[40%] border border-dashed"
+        className="pointer-events-none absolute inset-[10px] rounded-[24px] border"
+        style={{
+          borderColor: 'rgba(212, 175, 55, 0.12)',
+          background: 'radial-gradient(circle at center, rgba(255,255,255,0.04) 0%, rgba(12,58,36,0.2) 55%, rgba(0,0,0,0) 100%)',
+          boxShadow: 'inset 0 0 24px rgba(0,0,0,0.16)',
+        }}
+      />
+      <div
+        className="pointer-events-none absolute inset-[24px] rounded-[26px] border border-dashed"
         style={{ borderColor: 'rgba(212, 175, 55, 0.12)' }}
       />
+      <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2">
+        <span className="game-pill px-3 py-1 text-[9px] uppercase tracking-[0.24em] opacity-80">
+          Center Pile
+        </span>
+      </div>
 
       <AnimatePresence mode="sync">
-        {trickCards.map((tc, idx) => {
-          const position = playerPositionMap[tc.playerId] || 'bottom'
-          const offsets = getOffsets({ isMobile, isLandscapeMobile })
+        {trickCards.map((trickCard, index) => {
+          const position = playerPositionMap[trickCard.playerId] || 'bottom'
           const offset = offsets[position]
-          const isWinner = trickWinner === tc.playerId
+          const isWinner = trickWinner === trickCard.playerId
           const isCollecting = animPhase === 'collect'
-
-          // Collection target: move toward winner but not all the way to the edge
           const winnerOffset = winnerPosition ? offsets[winnerPosition] : null
           const collectTarget = isCollecting && winnerOffset
-            ? getCollectTarget(offset, winnerOffset)
+            ? getCollectTarget(winnerOffset)
             : null
-
-          const targetX = collectTarget ? collectTarget.x : offset.x
-          const targetY = collectTarget ? collectTarget.y : offset.y
 
           return (
             <motion.div
-              key={`${tc.card.suit}-${tc.card.rank}-${idx}`}
+              key={`${trickCard.card.suit}-${trickCard.card.rank}-${index}`}
               className={`absolute ${isWinner && animPhase === 'glow' ? 'trick-winner-glow rounded-lg' : ''}`}
               initial={{
                 x: offset.fromX,
@@ -131,8 +160,8 @@ export default function TrickArea({ positionedPlayers }) {
                 scale: 0.5,
               }}
               animate={{
-                x: targetX,
-                y: targetY,
+                x: collectTarget ? collectTarget.x : offset.x,
+                y: collectTarget ? collectTarget.y : offset.y,
                 opacity: isCollecting ? 0 : 1,
                 scale: isCollecting ? 0.5 : 1,
               }}
@@ -146,27 +175,26 @@ export default function TrickArea({ positionedPlayers }) {
                   ? { type: 'tween', duration: 0.45, ease: [0.4, 0, 0.2, 1] }
                   : { type: 'spring', stiffness: 220, damping: 22 }
               }
-              style={{ zIndex: isCollecting ? 20 + idx : idx }}
+              style={{ zIndex: isCollecting ? 20 + index : index }}
             >
               <Card
-                suit={tc.card.suit}
-                rank={tc.card.rank}
+                suit={trickCard.card.suit}
+                rank={trickCard.card.rank}
                 faceUp={true}
-                small={true}
+                small={layoutTier !== 'wide'}
               />
             </motion.div>
           )
         })}
       </AnimatePresence>
 
-      {/* Empty state */}
       {trickCards.length === 0 && (
-        <div className="relative z-10 flex flex-col items-center gap-1">
-          <div className="w-10 h-14 sm:w-14 sm:h-20 rounded-lg border border-dashed border-white/10 flex items-center justify-center bg-black/10">
+        <div className="relative z-10 flex flex-col items-center gap-2">
+          <div className="w-12 h-16 sm:w-14 sm:h-20 rounded-xl border border-dashed border-white/10 flex items-center justify-center bg-black/10">
             <span className="text-white/10 text-xl sm:text-2xl">{'\u2660'}</span>
           </div>
           <span className="text-[9px] sm:text-[10px] uppercase tracking-[0.22em] opacity-35">
-            Trick Area
+            Waiting For Play
           </span>
         </div>
       )}

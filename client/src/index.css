@@ -8,6 +8,18 @@
   --gold-light: #F0D060;
   --card-red: #DC2626;
   --card-black: #1a1a2e;
+  --game-safe-top: calc(env(safe-area-inset-top, 0px) + var(--native-status-bar-offset, 0px));
+  --game-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --game-shell-max: 1200px;
+  --game-shell-x: clamp(12px, 2.8vw, 28px);
+  --game-shell-top-gap: 6px;
+  --game-shell-bottom-gap: 10px;
+  --game-summary-max: min(92vw, 360px);
+  --game-sheet-compact-max: min(94vw, 360px);
+  --game-sheet-medium-max: min(42vw, 320px);
+  --game-sheet-wide-max: min(34vw, 380px);
+  --game-center-card-max: min(92vw, 560px);
+  --game-hand-tray-max: min(100%, 980px);
 }
 
 /* ===== Base & Body ===== */
@@ -230,6 +242,8 @@ body {
 .game-icon-button {
   min-width: 44px;
   min-height: 44px;
+  width: 44px;
+  height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -237,6 +251,47 @@ body {
   border: 1px solid rgba(212, 175, 55, 0.18);
   background: linear-gradient(180deg, rgba(10, 46, 29, 0.94) 0%, rgba(4, 19, 13, 0.94) 100%);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+}
+
+.game-shell {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
+.game-shell-lane {
+  width: min(100%, var(--game-shell-max));
+  margin-inline: auto;
+}
+
+.game-summary-card {
+  width: min(100%, var(--game-summary-max));
+  margin-inline: auto;
+}
+
+.game-floating-sheet {
+  background: linear-gradient(180deg, rgba(10, 46, 29, 0.97) 0%, rgba(4, 19, 13, 0.97) 100%);
+  border: 1px solid rgba(212, 175, 55, 0.2);
+  box-shadow: 0 24px 56px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(18px);
+}
+
+.game-turn-banner {
+  max-width: min(70vw, 360px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.game-hand-tray {
+  width: min(100%, var(--game-hand-tray-max));
+  margin-inline: auto;
+  position: relative;
+}
+
+.game-center-card {
+  width: min(100%, var(--game-center-card-max));
+  margin-inline: auto;
 }
 
 /* ===== Trick winner glow ===== */

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useSocket } from '../../context/SocketContext'
 import { useGame } from '../../context/GameContext'
+import { useOrientation } from '../../hooks/useOrientation'
 import { DonkeyLetters } from './DonkeyGameBoard'
 
 const AUTO_ADVANCE_SECONDS = 10
@@ -9,6 +10,7 @@ const AUTO_ADVANCE_SECONDS = 10
 export default function DonkeyRoundResult() {
   const { socket } = useSocket()
   const { state } = useGame()
+  const { layoutTier } = useOrientation()
   const [countdown, setCountdown] = useState(AUTO_ADVANCE_SECONDS)
 
   const result = state.donkeyRoundResult
@@ -16,13 +18,13 @@ export default function DonkeyRoundResult() {
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
+      setCountdown((previous) => {
+        if (previous <= 1) {
           clearInterval(timer)
           if (socket) socket.emit('donkey-next-round')
           return 0
         }
-        return prev - 1
+        return previous - 1
       })
     }, 1000)
 
@@ -32,73 +34,59 @@ export default function DonkeyRoundResult() {
   if (!result) return null
 
   const isLoser = result.loserId === myId
+  const cardWidthClass = layoutTier === 'compactLandscape'
+    ? 'max-w-[320px]'
+    : layoutTier === 'compactPortrait'
+      ? 'max-w-[340px]'
+      : 'max-w-[420px]'
 
   return (
     <motion.div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
     >
       <motion.div
-        className="w-[90%] max-w-sm rounded-2xl p-6 text-center"
-        style={{
-          background: 'linear-gradient(180deg, #0e4a2e 0%, #072818 100%)',
-          border: '1px solid rgba(212, 175, 55, 0.2)',
-          boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
-        }}
-        initial={{ scale: 0.8, opacity: 0 }}
+        className={`game-floating-sheet w-full ${cardWidthClass} rounded-[28px] p-5 text-center sm:p-6`}
+        style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}
+        initial={{ scale: 0.88, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ type: 'spring', damping: 20 }}
       >
-        <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--gold)' }}>
-          Round {result.round} Complete
-        </h2>
+        <p className="text-[10px] uppercase tracking-[0.24em] opacity-50">Round result</p>
+        <h2 className="mt-2 text-xl font-bold text-gold">Round {result.round} complete</h2>
 
-        <div className="my-4">
-          {isLoser ? (
-            <motion.div
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ type: 'spring', delay: 0.3 }}
-            >
-              <span className="text-4xl">🫏</span>
-              <p className="text-red-400 font-bold mt-2">
-                You got the letter "{result.newLetter}"!
-              </p>
-            </motion.div>
-          ) : (
-            <motion.div
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ type: 'spring', delay: 0.3 }}
-            >
-              <span className="text-4xl">✓</span>
-              <p className="text-green-400 font-medium mt-2">
-                {result.loserName} got the letter "{result.newLetter}"
-              </p>
-            </motion.div>
-          )}
+        <div className="my-5 rounded-[24px] border border-white/8 bg-black/15 px-4 py-4">
+          <div className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full border text-lg font-bold ${isLoser ? 'border-red-400/40 bg-red-500/15 text-red-300' : 'border-green-400/30 bg-green-500/10 text-green-300'}`}>
+            {isLoser ? result.newLetter : 'OK'}
+          </div>
+          <p className={`mt-3 text-sm font-semibold ${isLoser ? 'text-red-300' : 'text-green-300'}`}>
+            {isLoser
+              ? `You picked up the letter ${result.newLetter}.`
+              : `${result.loserName} picked up the letter ${result.newLetter}.`}
+          </p>
+          <p className="mt-2 text-xs opacity-65">The player left holding cards receives the next letter.</p>
         </div>
 
-        {/* Player letters */}
-        <div className="space-y-2 mb-5">
+        <div className="mb-5 space-y-2 text-left">
           {result.players?.map((player) => (
             <div
               key={player.id}
-              className={`flex items-center justify-between px-3 py-2 rounded-lg ${
+              className={`flex items-center justify-between gap-3 rounded-2xl border px-3 py-2 ${
                 player.id === myId
-                  ? 'bg-white/10 border border-white/10'
-                  : 'bg-white/5'
+                  ? 'border-[rgba(212,175,55,0.26)] bg-[rgba(212,175,55,0.08)]'
+                  : 'border-white/8 bg-black/10'
               }`}
             >
-              <span className={`text-sm font-medium ${
-                player.id === result.loserId ? 'text-red-400' : ''
-              }`}>
-                {player.name}
-                {player.id === myId && (
-                  <span className="text-[10px] opacity-50 ml-1">(You)</span>
-                )}
-              </span>
+              <div className="min-w-0">
+                <p className={`truncate text-sm font-medium ${player.id === result.loserId ? 'text-red-300' : 'text-white/90'}`}>
+                  {player.name}
+                  {player.id === myId ? ' (You)' : ''}
+                </p>
+                <p className="mt-1 text-[10px] uppercase tracking-[0.18em] opacity-45">
+                  {player.id === result.loserId ? 'Received letter' : 'Standing'}
+                </p>
+              </div>
               <DonkeyLetters letters={player.letters} small />
             </div>
           ))}
@@ -106,13 +94,11 @@ export default function DonkeyRoundResult() {
 
         <motion.button
           onClick={() => socket?.emit('donkey-next-round')}
-          className="w-full py-2.5 rounded-xl font-semibold text-black text-sm"
-          style={{
-            background: 'linear-gradient(135deg, var(--gold) 0%, var(--gold-light) 100%)',
-          }}
+          className="w-full rounded-2xl py-2.5 text-sm font-semibold text-black"
+          style={{ background: 'linear-gradient(135deg, var(--gold) 0%, var(--gold-light) 100%)' }}
           whileTap={{ scale: 0.98 }}
         >
-          Next Round ({countdown}s)
+          Next round ({countdown}s)
         </motion.button>
       </motion.div>
     </motion.div>

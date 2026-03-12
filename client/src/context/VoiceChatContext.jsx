@@ -3,7 +3,7 @@ import { useVoiceChat } from '../hooks/useVoiceChat'
 import { useGame } from './GameContext'
 import { useParty } from './PartyContext'
 
-const VoiceChatContext = createContext(null)
+export const VoiceChatContext = createContext(null)
 
 export function VoiceChatProvider({ children }) {
   const voiceChat = useVoiceChat()
@@ -76,4 +76,12 @@ export function useVoiceChatContext() {
     throw new Error('useVoiceChatContext must be used within a VoiceChatProvider')
   }
   return context
+}
+
+export function StaticVoiceChatProvider({ value, children }) {
+  return (
+    <VoiceChatContext.Provider value={value}>
+      {children}
+    </VoiceChatContext.Provider>
+  )
 }

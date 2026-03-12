@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, useRef } from 'react'
 import { io } from 'socket.io-client'
 import { useAuth } from './AuthContext'
 
-const SocketContext = createContext(null)
+export const SocketContext = createContext(null)
 
 // In production, VITE_SERVER_URL points to the deployed backend
 // In development, the Vite proxy handles /socket.io → localhost:3001
@@ -16,6 +16,26 @@ export function SocketProvider({ children }) {
   const [roomCode, setRoomCode] = useState(() => localStorage.getItem('callbreak_roomCode') || null)
   const [activeGame, setActiveGame] = useState(null)
   const socketRef = useRef(null)
+  const isProbeRoute = typeof window !== 'undefined' && window.location.pathname.startsWith('/dev-probe')
+
+  if (isProbeRoute) {
+    return (
+      <SocketContext.Provider
+        value={{
+          socket: null,
+          isConnected: false,
+          playerId,
+          roomCode,
+          activeGame: null,
+          setPlayerId,
+          setRoomCode,
+          rejoinGame: () => {},
+        }}
+      >
+        {children}
+      </SocketContext.Provider>
+    )
+  }
 
   useEffect(() => {
     const authPlayerId = user?.uid || playerId
@@ -144,4 +164,12 @@ export function useSocket() {
     throw new Error('useSocket must be used within a SocketProvider')
   }
   return context
+}
+
+export function StaticSocketProvider({ value, children }) {
+  return (
+    <SocketContext.Provider value={value}>
+      {children}
+    </SocketContext.Provider>
+  )
 }

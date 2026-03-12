@@ -15,6 +15,7 @@ import LandingPage from './pages/LandingPage'
 import LobbyPage from './pages/LobbyPage'
 import GamePage from './pages/GamePage'
 import DonkeyGamePage from './pages/DonkeyGamePage'
+import DevGameProbePage from './pages/DevGameProbePage'
 
 function NativeSessionController() {
   const location = useLocation()
@@ -233,6 +234,9 @@ function App() {
                     <Route path="/lobby" element={<LobbyPage />} />
                     <Route path="/game" element={<GamePage />} />
                     <Route path="/donkey-game" element={<DonkeyGamePage />} />
+                    {import.meta.env.DEV && (
+                      <Route path="/dev-probe/:mode" element={<DevGameProbePage />} />
+                    )}
                   </Routes>
                 </VoiceChatProvider>
               </PartyProvider>

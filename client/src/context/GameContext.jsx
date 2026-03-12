@@ -51,6 +51,8 @@ const initialState = {
   donkeyGameResult: null,      // { donkeyPlayerId, donkeyPlayerName, players, round }
 }
 
+export const gameInitialState = initialState
+
 function gameReducer(state, action) {
   switch (action.type) {
     case 'ROOM_CREATED':
@@ -709,6 +711,14 @@ export function GameProvider({ children }) {
     }
   }, [socket, setPlayerId, setRoomCode])
 
+  return (
+    <GameContext.Provider value={{ state, dispatch }}>
+      {children}
+    </GameContext.Provider>
+  )
+}
+
+export function StaticGameProvider({ state, dispatch = () => {}, children }) {
   return (
     <GameContext.Provider value={{ state, dispatch }}>
       {children}
