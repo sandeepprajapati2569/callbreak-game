@@ -203,9 +203,10 @@ async function captureScreenshot(page, canvas, outPath) {
         type: "png",
         omitBackground: false,
         clip: bbox,
+        timeout: 0,
       });
     } else {
-      buffer = await page.screenshot({ type: "png", omitBackground: false });
+      buffer = await page.screenshot({ type: "png", omitBackground: false, timeout: 0 });
     }
   }
   fs.writeFileSync(outPath, buffer);

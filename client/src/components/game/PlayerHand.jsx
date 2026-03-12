@@ -112,7 +112,8 @@ export default function PlayerHand() {
     ? 'Review your hand'
     : myTurn && phase === 'PLAYING'
       ? 'Play a card'
-      : `${cardCount} cards in hand`
+      : null
+  const showTrayLabel = Boolean(trayLabel) && !(isCompactPortrait && phase === 'PLAYING')
   const hasPendingCardInHand = pendingCardKey
     ? myHand.some((card) => `${card.suit}-${card.rank}` === pendingCardKey)
     : false
@@ -139,17 +140,19 @@ export default function PlayerHand() {
         }}
       />
       <div className="pointer-events-none absolute inset-x-6 top-4 h-px bg-[linear-gradient(90deg,rgba(255,255,255,0),rgba(240,208,96,0.58),rgba(255,255,255,0))]" />
-      <div className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2">
-        <span
-          className="game-pill px-3 py-1 text-[9px] uppercase tracking-[0.24em]"
-          style={{
-            background: 'rgba(4, 18, 12, 0.9)',
-            boxShadow: '0 10px 24px rgba(0,0,0,0.18)',
-          }}
-        >
-          {trayLabel}
-        </span>
-      </div>
+      {showTrayLabel && (
+        <div className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2">
+          <span
+            className="game-pill px-3 py-1 text-[9px] uppercase tracking-[0.24em]"
+            style={{
+              background: 'rgba(4, 18, 12, 0.9)',
+              boxShadow: '0 10px 24px rgba(0,0,0,0.18)',
+            }}
+          >
+            {trayLabel}
+          </span>
+        </div>
+      )}
 
       <div
         className="relative flex justify-center items-end px-2 pt-6 sm:px-4"

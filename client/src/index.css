@@ -12,7 +12,7 @@
   --game-safe-bottom: env(safe-area-inset-bottom, 0px);
   --game-shell-max: 1200px;
   --game-shell-x: clamp(12px, 2.8vw, 28px);
-  --game-shell-top-gap: 6px;
+  --game-shell-top-gap: 16px;
   --game-shell-bottom-gap: 10px;
   --game-summary-max: min(92vw, 360px);
   --game-sheet-compact-max: min(94vw, 360px);

@@ -84,6 +84,7 @@ const SUIT_ORDER = {
 
 const DENSITY_STYLES = {
   compact: {
+    collapsedWrapper: 'gap-1.5 px-2 py-2 min-w-[94px] max-w-[144px]',
     wrapper: 'gap-1.5 px-2 py-1.5 min-w-[98px] max-w-[150px]',
     avatar: 'w-6 h-6',
     avatarText: 'text-[11px]',
@@ -91,6 +92,7 @@ const DENSITY_STYLES = {
     badgeText: 'text-[8px] px-1.5 py-0.5',
   },
   standard: {
+    collapsedWrapper: 'gap-2 px-3 py-3 min-w-[126px] max-w-[184px]',
     wrapper: 'gap-2.5 px-3 py-3 min-w-[132px] max-w-[192px]',
     avatar: 'w-9 h-9',
     avatarText: 'text-sm',
@@ -98,6 +100,7 @@ const DENSITY_STYLES = {
     badgeText: 'text-[11px] px-2 py-0.5',
   },
   expanded: {
+    collapsedWrapper: 'gap-2.5 px-4 py-4 min-w-[148px] max-w-[216px]',
     wrapper: 'gap-3 px-4 py-4 min-w-[152px] max-w-[220px]',
     avatar: 'w-10 h-10',
     avatarText: 'text-base',
@@ -123,6 +126,7 @@ export default function DonkeyGameBoard() {
   const voiceChat = useVoiceChatContext()
   const { layoutTier, stationDensity, width } = useOrientation()
   const [playDisabled, setPlayDisabled] = useState(false)
+  const [expandedPlayerId, setExpandedPlayerId] = useState(null)
 
   const {
     myHand = [],
@@ -155,6 +159,12 @@ export default function DonkeyGameBoard() {
   useEffect(() => {
     if (isMyTurn) setPlayDisabled(false)
   }, [isMyTurn, donkeyTrickNumber])
+
+  useEffect(() => {
+    if (expandedPlayerId && !donkeyPlayers.some((player) => player.id === expandedPlayerId)) {
+      setExpandedPlayerId(null)
+    }
+  }, [donkeyPlayers, expandedPlayerId])
 
   const myIdx = donkeyPlayers.findIndex((player) => player.id === playerId)
   const numPlayers = donkeyPlayers.length
@@ -220,6 +230,10 @@ export default function DonkeyGameBoard() {
     setRoomCode(null)
     navigate('/')
   }, [socket, dispatch, setPlayerId, setRoomCode, navigate])
+
+  const handleToggleStationDetails = useCallback((id) => {
+    setExpandedPlayerId((current) => (current === id ? null : id))
+  }, [])
 
   const trickCardsWithNames = donkeyTrickCards.map((entry) => {
     const playerName = entry.playerName || donkeyPlayers.find((player) => player.id === entry.playerId)?.name || 'Player'
@@ -376,6 +390,8 @@ export default function DonkeyGameBoard() {
             timerPlayerId={donkeyTurnTimerPlayerId}
             timerStart={donkeyTurnTimerStart}
             timerDuration={donkeyTurnTimerDuration}
+            isExpanded={expandedPlayerId === player.id}
+            onToggleDetails={handleToggleStationDetails}
           />
         </div>
       ))}
@@ -542,7 +558,17 @@ export default function DonkeyGameBoard() {
   )
 }
 
-function DonkeyStation({ player, density = 'standard', isActive, isCurrentTurn, timerPlayerId, timerStart, timerDuration }) {
+function DonkeyStation({
+  player,
+  density = 'standard',
+  isActive,
+  isCurrentTurn,
+  timerPlayerId,
+  timerStart,
+  timerDuration,
+  isExpanded = false,
+  onToggleDetails,
+}) {
   const [timerProgress, setTimerProgress] = useState(1)
   const densityStyle = DENSITY_STYLES[density] || DENSITY_STYLES.standard
   const isCompact = density === 'compact'
@@ -568,10 +594,22 @@ function DonkeyStation({ player, density = 'standard', isActive, isCurrentTurn, 
   const timerSeconds = timerPlayerId === player.id && timerStart
     ? Math.ceil((timerProgress * timerDuration) / 1000)
     : 0
+  const wrapperClass = isExpanded ? densityStyle.wrapper : densityStyle.collapsedWrapper
+
+  const handleToggle = () => {
+    onToggleDetails?.(player.id)
+  }
+
+  const handleKeyDown = (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      handleToggle()
+    }
+  }
 
   return (
     <motion.div
-      className={`game-hud-surface flex flex-col items-center ${densityStyle.wrapper}`}
+      className={`game-hud-surface flex flex-col items-center ${wrapperClass} ${onToggleDetails ? 'cursor-pointer select-none active:scale-[0.98]' : ''}`}
       style={{
         borderColor: isCurrentTurn
           ? 'rgba(212, 175, 55, 0.4)'
@@ -587,6 +625,11 @@ function DonkeyStation({ player, density = 'standard', isActive, isCurrentTurn, 
       }}
       initial={{ opacity: 0, scale: 0.82 }}
       animate={{ opacity: isActive || isCurrentTurn || isSafe ? 1 : 0.6, scale: 1 }}
+      role={onToggleDetails ? 'button' : undefined}
+      tabIndex={onToggleDetails ? 0 : undefined}
+      aria-expanded={onToggleDetails ? isExpanded : undefined}
+      onClick={handleToggle}
+      onKeyDown={handleKeyDown}
     >
       <div className="relative">
         <div
@@ -619,25 +662,40 @@ function DonkeyStation({ player, density = 'standard', isActive, isCurrentTurn, 
       </div>
 
       <span className={`${densityStyle.name} truncate font-medium`}>{player.name}</span>
-      <DonkeyLetters letters={letters} small />
 
-      <div className={`flex flex-wrap items-center gap-1 ${isCompact ? '' : 'justify-center'}`}>
-        <span className={`game-pill ${densityStyle.badgeText}`}>
-          {isSafe ? 'Safe' : `${player.cardCount || 0} cards`}
-        </span>
-        {isCurrentTurn && (
-          <span className={`rounded-full bg-[rgba(212,175,55,0.12)] text-gold ${densityStyle.badgeText}`}>
-            {timerSeconds}s
-          </span>
+      <AnimatePresence initial={false}>
+        {isExpanded && (
+          <motion.div
+            className="w-full overflow-hidden"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+          >
+            <div className="mt-2 flex justify-center">
+              <DonkeyLetters letters={letters} small />
+            </div>
+
+            <div className={`mt-2 flex flex-wrap items-center gap-1 ${isCompact ? 'justify-center' : 'justify-center'}`}>
+              <span className={`game-pill ${densityStyle.badgeText}`}>
+                {isSafe ? 'Safe' : `${player.cardCount || 0} cards`}
+              </span>
+              {isCurrentTurn && (
+                <span className={`rounded-full bg-[rgba(212,175,55,0.12)] text-gold ${densityStyle.badgeText}`}>
+                  {timerSeconds}s
+                </span>
+              )}
+            </div>
+
+            {isCurrentTurn && !isCompact && (
+              <span className="mt-2 flex items-center justify-center gap-0.5 text-[9px] font-semibold text-gold">
+                <Clock size={10} />
+                Playing
+              </span>
+            )}
+          </motion.div>
         )}
-      </div>
-
-      {isCurrentTurn && !isCompact && (
-        <span className="flex items-center gap-0.5 text-[9px] font-semibold text-gold">
-          <Clock size={10} />
-          Playing
-        </span>
-      )}
+      </AnimatePresence>
     </motion.div>
   )
 }

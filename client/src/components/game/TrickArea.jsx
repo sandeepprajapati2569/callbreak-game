@@ -63,7 +63,7 @@ function getCollectTarget(winnerOffset) {
   }
 }
 
-export default function TrickArea({ positionedPlayers }) {
+export default function TrickArea({ positionedPlayers, playerCount = 4 }) {
   const { state } = useGame()
   const { trickCards, trickWinner } = state
   const { layoutTier } = useOrientation()
@@ -103,14 +103,28 @@ export default function TrickArea({ positionedPlayers }) {
     }
   }, [playerPositionMap, trickWinner])
 
-  const sizeClass = {
-    compactLandscape: 'w-[min(68vw,360px)] h-[min(36vh,168px)]',
-    compactPortrait: 'w-[min(88vw,320px)] h-[min(30vh,188px)]',
-    medium: 'w-[min(76vw,420px)] h-[min(32vh,220px)]',
-    wide: 'w-[min(50vw,500px)] h-[min(34vh,250px)]',
-  }[layoutTier]
+  const isHeadToHeadPortrait = playerCount <= 2 && layoutTier === 'compactPortrait'
+  const sizeClass = isHeadToHeadPortrait
+    ? 'w-[min(80vw,300px)] h-[min(26vh,186px)]'
+    : {
+        compactLandscape: 'w-[min(68vw,360px)] h-[min(36vh,168px)]',
+        compactPortrait: 'w-[min(80vw,292px)] h-[min(27vh,184px)]',
+        medium: 'w-[min(76vw,420px)] h-[min(32vh,220px)]',
+        wide: 'w-[min(50vw,500px)] h-[min(34vh,250px)]',
+      }[layoutTier]
 
   const offsets = getOffsets(layoutTier)
+  const effectiveOffsets = isHeadToHeadPortrait
+    ? {
+        ...offsets,
+        bottom: { x: 0, y: 38, fromX: 0, fromY: 86 },
+        top: { x: 0, y: -38, fromX: 0, fromY: -86 },
+      }
+    : offsets
+  const frameInset = isHeadToHeadPortrait ? '20px' : '24px'
+  const placeholderCardClass = isHeadToHeadPortrait
+    ? 'w-11 h-14 rounded-lg'
+    : 'w-12 h-16 sm:w-14 sm:h-20 rounded-xl'
 
   return (
     <div className={`game-floating-sheet relative flex items-center justify-center overflow-hidden rounded-[30px] ${sizeClass}`}>
@@ -121,30 +135,38 @@ export default function TrickArea({ positionedPlayers }) {
         }}
       />
       <div
-        className="pointer-events-none absolute inset-[10px] rounded-[24px] border"
+        className="pointer-events-none absolute inset-[10px] rounded-[24px]"
         style={{
-          borderColor: 'rgba(212, 175, 55, 0.12)',
           background: 'radial-gradient(circle at center, rgba(255,255,255,0.04) 0%, rgba(12,58,36,0.2) 55%, rgba(0,0,0,0) 100%)',
           boxShadow: 'inset 0 0 24px rgba(0,0,0,0.16)',
         }}
       />
       <div
-        className="pointer-events-none absolute inset-[24px] rounded-[26px] border border-dashed"
-        style={{ borderColor: 'rgba(212, 175, 55, 0.12)' }}
+        className="pointer-events-none absolute rounded-[26px] border border-dashed"
+        style={{
+          inset: frameInset,
+          borderColor: 'rgba(212, 175, 55, 0.12)',
+        }}
       />
-      <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2">
-        <span className="game-pill px-3 py-1 text-[9px] uppercase tracking-[0.24em] opacity-80">
-          Center Pile
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        <span
+          className="select-none text-[22px] font-semibold uppercase tracking-[0.55em] sm:text-[26px]"
+          style={{
+            color: 'rgba(212, 175, 55, 0.1)',
+            textShadow: '0 0 28px rgba(212, 175, 55, 0.05)',
+          }}
+        >
+          Card Trap
         </span>
       </div>
 
       <AnimatePresence mode="sync">
         {trickCards.map((trickCard, index) => {
           const position = playerPositionMap[trickCard.playerId] || 'bottom'
-          const offset = offsets[position]
+          const offset = effectiveOffsets[position]
           const isWinner = trickWinner === trickCard.playerId
           const isCollecting = animPhase === 'collect'
-          const winnerOffset = winnerPosition ? offsets[winnerPosition] : null
+          const winnerOffset = winnerPosition ? effectiveOffsets[winnerPosition] : null
           const collectTarget = isCollecting && winnerOffset
             ? getCollectTarget(winnerOffset)
             : null
@@ -190,7 +212,7 @@ export default function TrickArea({ positionedPlayers }) {
 
       {trickCards.length === 0 && (
         <div className="relative z-10 flex flex-col items-center gap-2">
-          <div className="w-12 h-16 sm:w-14 sm:h-20 rounded-xl border border-dashed border-white/10 flex items-center justify-center bg-black/10">
+          <div className={`${placeholderCardClass} border border-dashed border-white/10 flex items-center justify-center bg-black/10`}>
             <span className="text-white/10 text-xl sm:text-2xl">{'\u2660'}</span>
           </div>
           <span className="text-[9px] sm:text-[10px] uppercase tracking-[0.22em] opacity-35">

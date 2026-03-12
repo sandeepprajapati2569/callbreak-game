@@ -115,6 +115,41 @@ function buildCallbreakState(scenario, playerCount) {
     turnTimerPlayerId: 'p3',
   }
 
+  if (playerCount === 2) {
+    return {
+      ...baseState,
+      currentRound: 1,
+      currentTrick: 1,
+      currentTurn: 'p1',
+      myTurn: true,
+      trickCards: [],
+      ledSuit: null,
+      turnTimerPlayerId: 'p1',
+      turnTimerStart: Date.now() - 11000,
+      bids: {
+        p1: 5,
+        p2: 6,
+      },
+      tricksWon: {
+        p1: 3,
+        p2: 0,
+      },
+      totalScores: {
+        p1: 42,
+        p2: 31,
+      },
+      scores: [{
+        round: 1,
+        scores: players.map((player) => ({
+          playerId: player.id,
+          bid: player.id === 'p1' ? 5 : 6,
+          tricksWon: player.id === 'p1' ? 3 : 0,
+          roundScore: player.id === 'p1' ? 3 : -6,
+        })),
+      }],
+    }
+  }
+
   if (scenario === 'bidding') {
     return {
       ...baseState,
@@ -252,7 +287,7 @@ export default function DevGameProbePage() {
   const { mode = 'callbreak' } = useParams()
   const [searchParams] = useSearchParams()
   const scenario = searchParams.get('scenario') || 'playing'
-  const playerCount = Math.max(4, Math.min(5, Number(searchParams.get('players') || 5)))
+  const playerCount = Math.max(2, Math.min(5, Number(searchParams.get('players') || 5)))
   const probeMode = mode === 'donkey' ? 'donkey' : 'callbreak'
 
   const gameState = useMemo(() => {

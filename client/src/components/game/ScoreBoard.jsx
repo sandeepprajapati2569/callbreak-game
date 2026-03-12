@@ -6,9 +6,11 @@ import { useGame } from '../../context/GameContext'
 export default function ScoreBoard({ layoutTier = 'medium' }) {
   const [isOpen, setIsOpen] = useState(false)
   const { state } = useGame()
-  const { players, bids, tricksWon, totalScores, currentRound, playerId } = state
+  const { players, bids, tricksWon, totalScores, currentRound, currentTrick, playerId } = state
   const isCompactTier = layoutTier === 'compactPortrait' || layoutTier === 'compactLandscape'
   const myTotal = totalScores[playerId] ?? 0
+  const roundLabel = currentRound || 1
+  const trickLabel = (currentTrick || 0) + 1
   const playerRanking = useMemo(() => {
     return [...players]
       .map((player) => ({
@@ -31,15 +33,23 @@ export default function ScoreBoard({ layoutTier = 'medium' }) {
         whileTap={{ scale: 0.96 }}
       >
         <Trophy size={isCompactTier ? 14 : 16} style={{ color: 'var(--gold)' }} />
-        <div className="min-w-0 text-left leading-none">
-          <div className="text-[10px] uppercase tracking-[0.22em] opacity-50">Score</div>
-          <div className="mt-1 flex items-center gap-2 text-[11px] font-semibold text-white/90">
-            <span>You {myTotal}</span>
-            {!isCompactTier && (
-              <span className="text-[10px] opacity-45">Rank #{myRank}</span>
-            )}
+        {isCompactTier ? (
+          <div className="min-w-0 text-left leading-none">
+            <div className="text-[12px] font-semibold text-white/90">{myTotal}</div>
+            <div className="mt-1 text-[9px] uppercase tracking-[0.18em] opacity-45">
+              R{roundLabel} T{trickLabel}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="min-w-0 text-left leading-none">
+            <div className="text-[10px] uppercase tracking-[0.22em] opacity-50">Table</div>
+            <div className="mt-1 flex items-center gap-2 text-[11px] font-semibold text-white/90">
+              <span>{myTotal}</span>
+              <span className="text-[10px] opacity-45">R{roundLabel}</span>
+              <span className="text-[10px] opacity-45">T{trickLabel}</span>
+            </div>
+          </div>
+        )}
         {isOpen ? <ChevronUp size={14} className="opacity-40" /> : <ChevronDown size={14} className="opacity-40" />}
       </motion.button>
 
@@ -69,7 +79,7 @@ export default function ScoreBoard({ layoutTier = 'medium' }) {
             <div className="mb-3 flex items-start justify-between gap-3">
               <div>
                 <p className="text-[10px] uppercase tracking-[0.24em] opacity-50">Table scores</p>
-                <h3 className="mt-1 text-sm font-semibold text-gold">Round {currentRound || 1} of 5</h3>
+                <h3 className="mt-1 text-sm font-semibold text-gold">Round {roundLabel} • Trick {trickLabel}</h3>
               </div>
               {leader && (
                 <div className="rounded-2xl border border-white/8 bg-black/15 px-2.5 py-1.5 text-right">

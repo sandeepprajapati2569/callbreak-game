@@ -1,4 +1,4 @@
-import { useMemo, useCallback } from 'react'
+import { useMemo, useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { LogOut } from 'lucide-react'
@@ -16,46 +16,7 @@ const POSITION_MAPS = {
   2: ['bottom', 'top'],
   3: ['bottom', 'top-left', 'top-right'],
   4: ['bottom', 'left', 'top', 'right'],
-  5: ['bottom', 'bottom-left', 'top-left', 'top', 'top-right'],
-}
-
-const POSITION_STYLES = {
-  compactPortrait: {
-    top: 'absolute top-[124px] left-1/2 -translate-x-1/2 z-20',
-    left: 'absolute left-1 top-[48%] -translate-y-1/2 z-20',
-    right: 'absolute right-1 top-[48%] -translate-y-1/2 z-20',
-    'top-left': 'absolute top-[104px] left-[5%] z-20',
-    'top-right': 'absolute top-[104px] right-[5%] z-20',
-    'bottom-left': 'absolute bottom-[164px] left-[5%] z-20',
-    'bottom-right': 'absolute bottom-[164px] right-[5%] z-20',
-  },
-  compactLandscape: {
-    top: 'absolute top-[66px] left-1/2 -translate-x-1/2 z-20',
-    left: 'absolute left-1 top-[45%] -translate-y-1/2 z-20',
-    right: 'absolute right-1 top-[45%] -translate-y-1/2 z-20',
-    'top-left': 'absolute top-[72px] left-[12%] z-20',
-    'top-right': 'absolute top-[72px] right-[12%] z-20',
-    'bottom-left': 'absolute bottom-[112px] left-[12%] z-20',
-    'bottom-right': 'absolute bottom-[112px] right-[12%] z-20',
-  },
-  medium: {
-    top: 'absolute top-[102px] left-1/2 -translate-x-1/2 z-20',
-    left: 'absolute left-3 top-[46%] -translate-y-1/2 z-20',
-    right: 'absolute right-3 top-[46%] -translate-y-1/2 z-20',
-    'top-left': 'absolute top-[110px] left-[15%] z-20',
-    'top-right': 'absolute top-[110px] right-[15%] z-20',
-    'bottom-left': 'absolute bottom-[180px] left-[15%] z-20',
-    'bottom-right': 'absolute bottom-[180px] right-[15%] z-20',
-  },
-  wide: {
-    top: 'absolute top-[112px] left-1/2 -translate-x-1/2 z-20',
-    left: 'absolute left-6 top-[47%] -translate-y-1/2 z-20',
-    right: 'absolute right-6 top-[47%] -translate-y-1/2 z-20',
-    'top-left': 'absolute top-[118px] left-[18%] z-20',
-    'top-right': 'absolute top-[118px] right-[18%] z-20',
-    'bottom-left': 'absolute bottom-[198px] left-[18%] z-20',
-    'bottom-right': 'absolute bottom-[198px] right-[18%] z-20',
-  },
+  5: ['bottom', 'left', 'top-left', 'top-right', 'right'],
 }
 
 export default function GameBoard() {
@@ -66,18 +27,15 @@ export default function GameBoard() {
     players,
     playerId,
     currentTurn,
-    currentRound,
-    currentTrick,
-    roomCode,
     phase,
   } = state
   const {
     layoutTier,
     stationDensity,
-    width,
   } = useOrientation()
   const voiceChat = useVoiceChatContext()
   const { speakingPeers, isSelfSpeaking } = voiceChat
+  const [expandedPlayerId, setExpandedPlayerId] = useState(null)
 
   const handleLeaveRoom = useCallback(() => {
     if (!socket) return
@@ -87,6 +45,16 @@ export default function GameBoard() {
     setRoomCode(null)
     navigate('/')
   }, [socket, dispatch, setPlayerId, setRoomCode, navigate])
+
+  useEffect(() => {
+    if (expandedPlayerId && !players.some((player) => player.id === expandedPlayerId)) {
+      setExpandedPlayerId(null)
+    }
+  }, [expandedPlayerId, players])
+
+  const handleToggleStationDetails = useCallback((id) => {
+    setExpandedPlayerId((current) => (current === id ? null : id))
+  }, [])
 
   const mySeatIndex = useMemo(() => {
     return players.findIndex((player) => player.id === playerId)
@@ -109,23 +77,20 @@ export default function GameBoard() {
 
   const bottomPlayer = positionedPlayers.find((player) => player.position === 'bottom')
   const opponents = positionedPlayers.filter((player) => player.position !== 'bottom')
-  const phaseLabel = phase === 'BIDDING' ? 'Bidding' : phase === 'PLAYING' ? 'Live trick' : 'Starting'
   const isCompactLandscape = layoutTier === 'compactLandscape'
   const isCompactPortrait = layoutTier === 'compactPortrait'
-  const showRoomCode = !isCompactLandscape || width > 760
+  const isHeadToHead = players.length <= 2
+  const isHeadToHeadPortrait = isHeadToHead && isCompactPortrait
   const showBottomStation = Boolean(bottomPlayer) && phase !== 'BIDDING'
-  const opponentDensity = isCompactLandscape || (isCompactPortrait && players.length >= 5)
+  const opponentDensity = isHeadToHeadPortrait
+    ? 'expanded'
+    : isCompactLandscape || (isCompactPortrait && players.length >= 5)
     ? 'compact'
     : stationDensity
   const boardVars = {
-    '--game-summary-max': isCompactLandscape
-      ? 'min(72vw, 280px)'
-      : isCompactPortrait
-        ? 'min(88vw, 320px)'
-        : layoutTier === 'wide'
-          ? 'min(34vw, 380px)'
-          : 'min(72vw, 340px)',
-    '--game-center-card-max': isCompactLandscape
+    '--game-center-card-max': isHeadToHeadPortrait
+      ? 'min(84vw, 308px)'
+      : isCompactLandscape
       ? 'min(72vw, 360px)'
       : isCompactPortrait
         ? 'min(88vw, 320px)'
@@ -136,32 +101,95 @@ export default function GameBoard() {
     '--game-hud-overlay-top': isCompactLandscape
       ? 'calc(var(--game-safe-top) + 60px)'
       : 'calc(var(--game-safe-top) + 72px)',
+    '--game-playfield-top-inset': {
+      compactPortrait: 'calc(var(--game-safe-top) + 106px)',
+      compactLandscape: 'calc(var(--game-safe-top) + 84px)',
+      medium: 'calc(var(--game-safe-top) + 112px)',
+      wide: 'calc(var(--game-safe-top) + 118px)',
+    }[layoutTier],
+    '--game-playfield-bottom-inset': {
+      compactPortrait: isHeadToHeadPortrait
+        ? 'calc(var(--game-safe-bottom) + 188px)'
+        : 'calc(var(--game-safe-bottom) + 198px)',
+      compactLandscape: 'calc(var(--game-safe-bottom) + 136px)',
+      medium: 'calc(var(--game-safe-bottom) + 208px)',
+      wide: 'calc(var(--game-safe-bottom) + 222px)',
+    }[layoutTier],
+    '--game-playfield-center-y': 'calc(50% + (var(--game-playfield-top-inset) - var(--game-playfield-bottom-inset)) / 2)',
   }
-  const tableFrameClass = {
-    compactPortrait: 'w-[min(88vw,360px)] h-[min(34vh,248px)]',
-    compactLandscape: 'w-[min(72vw,420px)] h-[min(44vh,228px)]',
-    medium: 'w-[min(64vw,560px)] h-[min(44vh,340px)]',
-    wide: 'w-[min(52vw,620px)] h-[min(46vh,390px)]',
+  const tableFrameClass = isHeadToHeadPortrait
+    ? 'w-[min(88vw,334px)] h-[min(28vh,214px)]'
+    : {
+        compactPortrait: 'w-[min(88vw,332px)] h-[min(28vh,212px)]',
+        compactLandscape: 'w-[min(72vw,392px)] h-[min(40vh,206px)]',
+        medium: 'w-[min(64vw,508px)] h-[min(38vh,284px)]',
+        wide: 'w-[min(52vw,568px)] h-[min(40vh,328px)]',
+      }[layoutTier]
+  const bottomStationBottom = isHeadToHeadPortrait
+    ? 'calc(var(--game-safe-bottom) + 146px)'
+    : {
+        compactPortrait: 'calc(var(--game-safe-bottom) + 148px)',
+        compactLandscape: 'calc(var(--game-safe-bottom) + 108px)',
+        medium: 'calc(var(--game-safe-bottom) + 162px)',
+        wide: 'calc(var(--game-safe-bottom) + 176px)',
+      }[layoutTier]
+  const bottomStationDensity = isHeadToHeadPortrait ? 'expanded' : layoutTier === 'wide' ? 'expanded' : 'standard'
+  const bottomUsesLineAnchor = layoutTier === 'compactPortrait' || layoutTier === 'compactLandscape'
+  const orbitMetrics = {
+    compactPortrait: isHeadToHeadPortrait
+      ? { width: 324, height: 210, horizontal: 162, vertical: 105, cornerX: 98 }
+      : { width: 316, height: 208, horizontal: 158, vertical: 104, cornerX: 92 },
+    compactLandscape: { width: 392, height: 206, horizontal: 196, vertical: 103, cornerX: 112 },
+    medium: { width: 508, height: 284, horizontal: 254, vertical: 142, cornerX: 150 },
+    wide: { width: 568, height: 328, horizontal: 284, vertical: 164, cornerX: 168 },
   }[layoutTier]
-  const centerRingSize = {
-    compactPortrait: '104px',
-    compactLandscape: '88px',
-    medium: '118px',
-    wide: '136px',
-  }[layoutTier]
-  const turnBannerTop = {
-    compactPortrait: 'calc(50% - 146px)',
-    compactLandscape: 'calc(50% - 120px)',
-    medium: 'calc(50% - 158px)',
-    wide: 'calc(50% - 176px)',
-  }[layoutTier]
-  const bottomStationBottom = {
-    compactPortrait: 'calc(var(--game-safe-bottom) + 148px)',
-    compactLandscape: 'calc(var(--game-safe-bottom) + 108px)',
-    medium: 'calc(var(--game-safe-bottom) + 162px)',
-    wide: 'calc(var(--game-safe-bottom) + 176px)',
-  }[layoutTier]
-  const positionClasses = POSITION_STYLES[layoutTier] || POSITION_STYLES.medium
+  const tableOrbitStyle = orbitMetrics
+    ? {
+        width: `${orbitMetrics.width}px`,
+        height: `${orbitMetrics.height}px`,
+      }
+    : undefined
+
+  const getPlayerPositionConfig = (position) => {
+    const centeredAnchor = 'absolute left-1/2 -translate-x-1/2 -translate-y-1/2 z-20'
+
+    if (orbitMetrics) {
+      const orbitAnchors = {
+        top: {
+          className: centeredAnchor,
+          style: { top: `calc(var(--game-playfield-center-y) - ${orbitMetrics.vertical}px)` },
+        },
+        bottom: {
+          className: centeredAnchor,
+          style: { top: `calc(var(--game-playfield-center-y) + ${orbitMetrics.vertical}px)` },
+        },
+        left: {
+          className: centeredAnchor,
+          style: { left: `calc(50% - ${orbitMetrics.horizontal}px)`, top: 'var(--game-playfield-center-y)' },
+        },
+        right: {
+          className: centeredAnchor,
+          style: { left: `calc(50% + ${orbitMetrics.horizontal}px)`, top: 'var(--game-playfield-center-y)' },
+        },
+        'top-left': {
+          className: centeredAnchor,
+          style: { left: `calc(50% - ${orbitMetrics.cornerX}px)`, top: `calc(var(--game-playfield-center-y) - ${orbitMetrics.vertical}px)` },
+        },
+        'top-right': {
+          className: centeredAnchor,
+          style: { left: `calc(50% + ${orbitMetrics.cornerX}px)`, top: `calc(var(--game-playfield-center-y) - ${orbitMetrics.vertical}px)` },
+        },
+      }
+
+      if (orbitAnchors[position]) {
+        return orbitAnchors[position]
+      }
+    }
+    return {
+      className: centeredAnchor,
+      style: { top: 'var(--game-playfield-center-y)' },
+    }
+  }
 
   return (
     <div className="game-shell felt-bg" style={boardVars}>
@@ -169,8 +197,10 @@ export default function GameBoard() {
         <div className="absolute inset-x-0 top-0 h-32 bg-[linear-gradient(180deg,rgba(0,0,0,0.34),transparent)]" />
         <div className="absolute inset-x-0 bottom-0 h-44 bg-[linear-gradient(0deg,rgba(0,0,0,0.4),transparent)]" />
         <motion.div
-          className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-[42%] border ${tableFrameClass}`}
+          className={`absolute left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-[34px] border ${tableFrameClass}`}
           style={{
+            ...tableOrbitStyle,
+            top: 'var(--game-playfield-center-y)',
             borderColor: 'rgba(212, 175, 55, 0.18)',
             background: 'radial-gradient(circle at center, rgba(17, 91, 57, 0.56) 0%, rgba(9, 50, 31, 0.28) 58%, rgba(0, 0, 0, 0) 100%)',
             boxShadow: '0 0 0 1px rgba(255,255,255,0.03), inset 0 0 54px rgba(0,0,0,0.2), 0 42px 120px rgba(0,0,0,0.25)',
@@ -179,16 +209,11 @@ export default function GameBoard() {
           transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
         />
         <div
-          className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-[42%] border border-dashed ${tableFrameClass}`}
-          style={{ borderColor: 'rgba(212, 175, 55, 0.12)' }}
-        />
-        <div
-          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border"
+          className={`absolute left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-[34px] border border-dashed ${tableFrameClass}`}
           style={{
-            width: centerRingSize,
-            height: centerRingSize,
-            borderColor: 'rgba(212, 175, 55, 0.14)',
-            boxShadow: '0 0 30px rgba(212, 175, 55, 0.08)',
+            ...tableOrbitStyle,
+            top: 'var(--game-playfield-center-y)',
+            borderColor: 'rgba(212, 175, 55, 0.12)',
           }}
         />
       </div>
@@ -197,7 +222,7 @@ export default function GameBoard() {
         className="absolute inset-x-0 z-30 px-[var(--game-shell-x)]"
         style={{ top: 'calc(var(--game-safe-top) + var(--game-shell-top-gap))' }}
       >
-        <div className="game-shell-lane grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2 sm:gap-3">
+        <div className="game-shell-lane flex items-center justify-between gap-2 sm:gap-3">
           <div className="flex items-center gap-2 justify-self-start">
             <motion.button
               onClick={handleLeaveRoom}
@@ -211,31 +236,7 @@ export default function GameBoard() {
             >
               <LogOut size={14} />
             </motion.button>
-            <div className="game-hud-surface rounded-2xl px-1.5 py-1.5 sm:px-2 sm:py-2">
-              <VoiceChat voiceChat={voiceChat} />
-            </div>
-          </div>
-
-          <div className="min-w-0 justify-self-center">
-            <div className="game-hud-surface game-summary-card px-3 py-2.5 text-center sm:px-4 sm:py-3">
-              <div className="flex items-center justify-center gap-2 text-[9px] uppercase tracking-[0.26em] sm:text-[10px]">
-                <span className="game-pill px-2 py-0.5">{phaseLabel}</span>
-                {showRoomCode && roomCode && (
-                  <span className="max-w-[118px] truncate opacity-45 sm:max-w-none">Table {roomCode}</span>
-                )}
-              </div>
-              <div className="mt-2 flex items-center justify-center gap-4 sm:gap-6">
-                <div>
-                  <p className="text-[9px] uppercase tracking-[0.24em] opacity-45 sm:text-[10px]">Round</p>
-                  <p className="mt-1 text-sm font-semibold text-gold sm:text-base">{currentRound || 1}</p>
-                </div>
-                <div className="h-8 w-px bg-white/10" />
-                <div>
-                  <p className="text-[9px] uppercase tracking-[0.24em] opacity-45 sm:text-[10px]">Trick</p>
-                  <p className="mt-1 text-sm font-semibold text-gold sm:text-base">{(currentTrick || 0) + 1}</p>
-                </div>
-              </div>
-            </div>
+            <VoiceChat voiceChat={voiceChat} />
           </div>
 
           <div className="justify-self-end">
@@ -244,66 +245,53 @@ export default function GameBoard() {
         </div>
       </div>
 
-      {opponents.map((player) => (
-        <div key={player.id} className={positionClasses[player.position] || positionClasses.top}>
+      {opponents.map((player) => {
+        const positionConfig = getPlayerPositionConfig(player.position)
+        const compactTopLabel = (
+          layoutTier === 'compactPortrait' || layoutTier === 'compactLandscape'
+        ) && (player.position === 'top' || player.position === 'top-left' || player.position === 'top-right')
+
+        return (
+        <div key={player.id} className={positionConfig.className} style={positionConfig.style}>
           <PlayerStation
             player={player}
             isCurrentTurn={currentTurn === player.id}
             isSelf={false}
             isSpeaking={speakingPeers.has(player.id)}
             density={opponentDensity}
+            isExpanded={expandedPlayerId === player.id}
+            onToggleDetails={handleToggleStationDetails}
+            namePlacement={compactTopLabel ? 'above' : 'below'}
           />
         </div>
-      ))}
+      )})}
 
-      {phase === 'PLAYING' && currentTurn && (
-        <div className="absolute left-1/2 z-20 -translate-x-1/2" style={{ top: turnBannerTop }}>
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={currentTurn}
-              className="game-turn-banner rounded-[20px] border px-3 py-1.5 text-center text-xs font-medium sm:px-4 sm:py-2 sm:text-sm"
-              style={{
-                background: currentTurn === playerId
-                  ? 'linear-gradient(135deg, rgba(240, 208, 96, 0.98), rgba(212, 175, 55, 0.95))'
-                  : 'linear-gradient(180deg, rgba(8, 42, 26, 0.92), rgba(4, 22, 14, 0.96))',
-                color: currentTurn === playerId ? '#000' : 'var(--gold)',
-                borderColor: 'rgba(212, 175, 55, 0.45)',
-                boxShadow: currentTurn === playerId
-                  ? '0 10px 30px rgba(212, 175, 55, 0.34)'
-                  : '0 10px 24px rgba(0, 0, 0, 0.22)',
-              }}
-              initial={{ opacity: 0, y: -10, scale: 0.9 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 10, scale: 0.9 }}
-              transition={{ duration: 0.22 }}
-            >
-              <div className="text-[9px] uppercase tracking-[0.24em] opacity-65 sm:text-[10px]">
-                {currentTurn === playerId ? 'Now playing' : 'Turn'}
-              </div>
-              <span className="block truncate">
-                {currentTurn === playerId
-                  ? 'Your turn'
-                  : `${players.find((player) => player.id === currentTurn)?.name || 'Player'}'s turn`}
-              </span>
-            </motion.div>
-          </AnimatePresence>
-        </div>
-      )}
-
-      <div className="absolute inset-0 z-10 flex items-center justify-center px-[var(--game-shell-x)] pb-[120px] pt-[94px] sm:pb-[136px]">
+      <div
+        className="absolute left-1/2 z-10 -translate-x-1/2 -translate-y-1/2 px-[var(--game-shell-x)]"
+        style={{ top: 'var(--game-playfield-center-y)' }}
+      >
         <div className="game-center-card flex justify-center">
-          <TrickArea positionedPlayers={positionedPlayers} />
+          <TrickArea positionedPlayers={positionedPlayers} playerCount={players.length} />
         </div>
       </div>
 
       {showBottomStation && (
-        <div className="absolute left-1/2 z-20 -translate-x-1/2" style={{ bottom: bottomStationBottom }}>
+        <div
+          className={players.length === 5 || bottomUsesLineAnchor || isHeadToHeadPortrait
+            ? getPlayerPositionConfig('bottom').className
+            : 'absolute left-1/2 z-20 -translate-x-1/2'}
+          style={players.length === 5 || bottomUsesLineAnchor || isHeadToHeadPortrait
+            ? getPlayerPositionConfig('bottom').style
+            : { bottom: bottomStationBottom }}
+        >
           <PlayerStation
             player={bottomPlayer}
             isCurrentTurn={currentTurn === bottomPlayer.id}
             isSelf={true}
             isSpeaking={isSelfSpeaking}
-            density={layoutTier === 'wide' ? 'expanded' : 'standard'}
+            density={bottomStationDensity}
+            isExpanded={expandedPlayerId === bottomPlayer.id}
+            onToggleDetails={handleToggleStationDetails}
           />
         </div>
       )}
