@@ -20,12 +20,20 @@ export default function BiddingPanel() {
 
   const currentBidder = players.find((p) => p.id === currentTurn)
   const isShortLandscape = isLandscapeMobile && height <= 420
+  const bidOptions = Array.from({ length: maxBid }, (_, i) => i + 1)
   const panelWidth = isLandscapeMobile
-    ? (isShortLandscape ? 'min(92vw, 420px)' : 'min(88vw, 460px)')
-    : 'min(94vw, 420px)'
+    ? (isShortLandscape ? 'min(76vw, 390px)' : 'min(72vw, 430px)')
+    : 'min(92vw, 440px)'
   const topOffset = isLandscapeMobile
-    ? '35px'
+    ? '44px'
     : 'calc(env(safe-area-inset-top, 0px) + var(--native-status-bar-offset, 0px) + 52px)'
+  const bidGridClass = isLandscapeMobile
+    ? (isShortLandscape ? 'grid-cols-5' : 'grid-cols-6')
+    : maxBid <= 10
+      ? 'grid-cols-5'
+      : maxBid <= 13
+        ? 'grid-cols-7'
+        : 'grid-cols-9'
   const orderedBids = players.filter((p) => bids[p.id] !== undefined)
 
   return (
@@ -38,17 +46,15 @@ export default function BiddingPanel() {
       transition={{ duration: 0.3 }}
     >
       <motion.div
-        className={`pointer-events-auto glass-panel ${
-          isLandscapeMobile ? 'p-2.5' : 'p-4 sm:p-6'
+        className={`pointer-events-auto game-hud-surface ${
+          isLandscapeMobile ? 'p-2.5' : 'p-4 sm:p-5'
         }`}
         style={{
           width: panelWidth,
-          maxHeight: isLandscapeMobile ? (isShortLandscape ? '40dvh' : '46dvh') : '55dvh',
+          maxHeight: isLandscapeMobile ? (isShortLandscape ? '42dvh' : '48dvh') : '55dvh',
           overflowY: 'auto',
           overflowX: 'hidden',
-          backdropFilter: 'blur(14px)',
-          boxShadow: '0 8px 28px rgba(0,0,0,0.35)',
-          border: '1px solid rgba(212, 175, 55, 0.45)',
+          borderColor: 'rgba(212, 175, 55, 0.22)',
         }}
         initial={{ scale: 0.8, y: -30 }}
         animate={{ scale: 1, y: 0 }}
@@ -56,18 +62,34 @@ export default function BiddingPanel() {
         transition={{ type: 'spring', stiffness: 260, damping: 24 }}
       >
         <div className={`flex items-center justify-between ${isLandscapeMobile ? 'mb-2' : 'mb-3'}`}>
-          <h2
-            className={`${isLandscapeMobile ? 'text-sm' : 'text-lg sm:text-xl'} font-bold tracking-wide`}
-            style={{ color: 'var(--gold)' }}
-          >
-            {myTurn ? 'Place Your Bid' : 'Bidding Round'}
-          </h2>
-          <span
-            className={`${isLandscapeMobile ? 'text-[11px] px-2 py-0.5' : 'text-xs px-2.5 py-1'} rounded-full border`}
-            style={{ borderColor: 'rgba(212,175,55,0.35)', color: 'rgba(240,240,240,0.8)' }}
-          >
-            Max {maxBid}
-          </span>
+          <div>
+            <h2
+              className={`${isLandscapeMobile ? 'text-sm' : 'text-lg sm:text-xl'} font-bold tracking-wide`}
+              style={{ color: 'var(--gold)' }}
+            >
+              {myTurn ? 'Place Your Bid' : 'Bidding Round'}
+            </h2>
+            <p className={`${isLandscapeMobile ? 'text-[10px]' : 'text-xs'} mt-1 opacity-55`}>
+              {myTurn
+                ? 'Pick the tricks you expect to win.'
+                : `${currentBidder?.name || 'Player'} is choosing a bid.`}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {myTurn && selectedBid !== null && (
+              <span
+                className={`game-pill ${isLandscapeMobile ? 'text-[11px] px-2 py-0.5' : 'text-xs px-2.5 py-1'} font-semibold`}
+              >
+                Selected {selectedBid}
+              </span>
+            )}
+            <span
+              className={`${isLandscapeMobile ? 'text-[11px] px-2 py-0.5' : 'text-xs px-2.5 py-1'} rounded-full border`}
+              style={{ borderColor: 'rgba(212,175,55,0.28)', color: 'rgba(240,240,240,0.8)' }}
+            >
+              Max {maxBid}
+            </span>
+          </div>
         </div>
 
         {orderedBids.length > 0 && (
@@ -94,70 +116,47 @@ export default function BiddingPanel() {
         {myTurn ? (
           <>
             {!isShortLandscape && (
-              <p className={`${isLandscapeMobile ? 'text-[11px] mb-1.5' : 'text-xs mb-2'} text-center opacity-55`}>
-                Choose a bid. Your cards stay visible below.
+              <p className={`${isLandscapeMobile ? 'text-[11px] mb-2' : 'text-xs mb-2.5'} opacity-55`}>
+                Your hand stays visible. Select one number, then confirm.
               </p>
             )}
 
-            {isLandscapeMobile ? (
-              <div className="mb-2 overflow-x-auto scrollbar-hide">
-                <div className="flex gap-1.5 min-w-max pb-1">
-                  {Array.from({ length: maxBid }, (_, i) => i + 1).map((num) => (
-                    <motion.button
-                      key={num}
-                      onClick={() => setSelectedBid(num)}
-                      className={`${isShortLandscape ? 'w-8 h-8 text-xs' : 'w-9 h-9 text-sm'} rounded-lg font-bold shrink-0 transition-all duration-200 ${
-                        selectedBid === num
-                          ? 'text-black'
-                          : 'bg-white/5 text-white/80 hover:bg-white/10 border border-white/10'
-                      }`}
-                      style={
-                        selectedBid === num
-                          ? {
-                              background: 'linear-gradient(135deg, var(--gold), var(--gold-light))',
-                              boxShadow: '0 0 12px rgba(212, 175, 55, 0.35)',
-                            }
-                          : {}
-                      }
-                      whileTap={{ scale: 0.95 }}
-                    >
-                      {num}
-                    </motion.button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className={`grid ${maxBid <= 10 ? 'grid-cols-5' : maxBid <= 13 ? 'grid-cols-7' : 'grid-cols-9'} gap-1.5 sm:gap-2 mb-3`}>
-                {Array.from({ length: maxBid }, (_, i) => i + 1).map((num) => (
-                  <motion.button
-                    key={num}
-                    onClick={() => setSelectedBid(num)}
-                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-lg font-bold text-sm sm:text-base transition-all duration-200 ${
-                      selectedBid === num
-                        ? 'text-black'
-                        : 'bg-white/5 text-white/80 hover:bg-white/10 border border-white/10'
-                    }`}
-                    style={
-                      selectedBid === num
-                        ? {
-                            background: 'linear-gradient(135deg, var(--gold), var(--gold-light))',
-                            boxShadow: '0 0 15px rgba(212, 175, 55, 0.4)',
-                          }
-                        : {}
-                    }
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                  >
-                    {num}
-                  </motion.button>
-                ))}
-              </div>
-            )}
+            <div className={`grid ${bidGridClass} gap-1.5 sm:gap-2 mb-3`}>
+              {bidOptions.map((num) => (
+                <motion.button
+                  key={num}
+                  onClick={() => setSelectedBid(num)}
+                  className={`${
+                    isLandscapeMobile
+                      ? isShortLandscape
+                        ? 'h-9 text-xs'
+                        : 'h-10 text-sm'
+                      : 'h-10 sm:h-11 text-sm sm:text-base'
+                  } rounded-xl font-bold transition-all duration-200 ${
+                    selectedBid === num
+                      ? 'text-black'
+                      : 'bg-white/5 text-white/80 hover:bg-white/10 border border-white/10'
+                  }`}
+                  style={
+                    selectedBid === num
+                      ? {
+                          background: 'linear-gradient(135deg, var(--gold), var(--gold-light))',
+                          boxShadow: '0 0 15px rgba(212, 175, 55, 0.35)',
+                        }
+                      : {}
+                  }
+                  whileHover={!isLandscapeMobile ? { scale: 1.04 } : {}}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  {num}
+                </motion.button>
+              ))}
+            </div>
 
             <motion.button
               onClick={handleConfirmBid}
               disabled={selectedBid === null}
-              className={`w-full ${isLandscapeMobile ? 'py-1.5 text-sm' : 'py-2.5 text-base'} rounded-xl font-bold text-black transition-all disabled:opacity-30 disabled:cursor-not-allowed`}
+              className={`w-full ${isLandscapeMobile ? 'py-2 text-sm' : 'py-2.5 text-base'} rounded-xl font-bold text-black transition-all disabled:opacity-30 disabled:cursor-not-allowed`}
               style={{
                 background: 'linear-gradient(135deg, var(--gold) 0%, var(--gold-light) 100%)',
                 boxShadow: selectedBid !== null ? '0 4px 15px rgba(212, 175, 55, 0.3)' : 'none',

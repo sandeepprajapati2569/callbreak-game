@@ -90,6 +90,19 @@ export default function TrickArea({ positionedPlayers }) {
     <div className={`relative flex items-center justify-center ${
       isLandscapeMobile ? 'w-40 h-24' : isMobile ? 'w-36 h-28' : 'w-48 h-40'
     }`}>
+      <div
+        className="pointer-events-none absolute inset-0 rounded-[42%] border"
+        style={{
+          borderColor: 'rgba(212, 175, 55, 0.14)',
+          background: 'radial-gradient(circle at center, rgba(255,255,255,0.05) 0%, rgba(12,58,36,0.28) 55%, rgba(0,0,0,0) 100%)',
+          boxShadow: 'inset 0 0 30px rgba(0,0,0,0.18)',
+        }}
+      />
+      <div
+        className="pointer-events-none absolute inset-[14%] rounded-[40%] border border-dashed"
+        style={{ borderColor: 'rgba(212, 175, 55, 0.12)' }}
+      />
+
       <AnimatePresence mode="sync">
         {trickCards.map((tc, idx) => {
           const position = playerPositionMap[tc.playerId] || 'bottom'
@@ -148,8 +161,13 @@ export default function TrickArea({ positionedPlayers }) {
 
       {/* Empty state */}
       {trickCards.length === 0 && (
-        <div className="w-10 h-14 sm:w-14 sm:h-20 rounded-lg border border-dashed border-white/10 flex items-center justify-center">
-          <span className="text-white/10 text-xl sm:text-2xl">{'\u2660'}</span>
+        <div className="relative z-10 flex flex-col items-center gap-1">
+          <div className="w-10 h-14 sm:w-14 sm:h-20 rounded-lg border border-dashed border-white/10 flex items-center justify-center bg-black/10">
+            <span className="text-white/10 text-xl sm:text-2xl">{'\u2660'}</span>
+          </div>
+          <span className="text-[9px] sm:text-[10px] uppercase tracking-[0.22em] opacity-35">
+            Trick Area
+          </span>
         </div>
       )}
     </div>

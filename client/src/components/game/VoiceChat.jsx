@@ -34,35 +34,48 @@ export default function VoiceChat({ voiceChat }) {
     return (
       <motion.button
         onClick={joinVoice}
-        className="p-1.5 sm:p-2 rounded-full bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/70 transition-all duration-200"
+        className="game-icon-button text-white/60 hover:text-white transition-all duration-200"
         whileTap={{ scale: 0.85 }}
         title="Join voice chat"
       >
-        <Mic size={14} />
+        <Mic size={16} />
       </motion.button>
     )
   }
 
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-2">
       {/* Self mute toggle */}
       <motion.button
         onClick={toggleMute}
-        className={`p-1.5 sm:p-2 rounded-full transition-all duration-200 ${
+        className={`game-icon-button transition-all duration-200 ${
           isMuted || isForceMuted
-            ? 'bg-red-500/25 text-red-400'
+            ? 'text-red-300'
             : isSelfSpeaking
-              ? 'bg-green-500/25 text-green-400'
-              : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/70'
+              ? 'text-green-300'
+              : 'text-white/60 hover:text-white'
         }`}
+        style={
+          isMuted || isForceMuted
+            ? {
+                background: 'linear-gradient(180deg, rgba(76, 14, 14, 0.94), rgba(47, 8, 8, 0.94))',
+                borderColor: 'rgba(239, 68, 68, 0.24)',
+              }
+            : isSelfSpeaking
+              ? {
+                  background: 'linear-gradient(180deg, rgba(10, 56, 28, 0.96), rgba(4, 22, 12, 0.94))',
+                  borderColor: 'rgba(34, 197, 94, 0.2)',
+                }
+              : undefined
+        }
         whileTap={{ scale: 0.85 }}
         title={isForceMuted ? 'Muted by host' : isMuted ? 'Unmute' : 'Mute'}
       >
-        {isMuted || isForceMuted ? <MicOff size={14} /> : <Mic size={14} />}
+        {isMuted || isForceMuted ? <MicOff size={16} /> : <Mic size={16} />}
       </motion.button>
 
       {isForceMuted && (
-        <span className="text-[9px] text-red-400/70">Muted by host</span>
+        <span className="hidden sm:inline text-[10px] text-red-300/80 whitespace-nowrap">Muted by host</span>
       )}
 
       {/* Host mute controls for other players in voice */}
@@ -72,9 +85,13 @@ export default function VoiceChat({ voiceChat }) {
           <motion.button
             key={p.id}
             onClick={() => handleHostMute(p.id)}
-            className={`p-1 rounded-full transition-colors ${
-              mutedPlayers.has(p.id) ? 'text-red-400' : 'text-white/30 hover:text-white/60'
+            className={`w-8 h-8 rounded-xl border transition-colors ${
+              mutedPlayers.has(p.id) ? 'text-red-300' : 'text-white/40 hover:text-white/70'
             }`}
+            style={{
+              borderColor: mutedPlayers.has(p.id) ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.08)',
+              background: mutedPlayers.has(p.id) ? 'rgba(76, 14, 14, 0.78)' : 'rgba(255,255,255,0.04)',
+            }}
             whileTap={{ scale: 0.85 }}
             title={mutedPlayers.has(p.id) ? `Unmute ${p.name}` : `Mute ${p.name}`}
           >

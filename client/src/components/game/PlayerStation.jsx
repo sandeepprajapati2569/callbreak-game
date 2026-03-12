@@ -40,21 +40,36 @@ export default function PlayerStation({ player, position, isCurrentTurn, isSelf,
 
   const avatarSize = compact ? 'w-6 h-6' : 'w-8 h-8 sm:w-10 sm:h-10'
   const avatarTextSize = compact ? 'text-xs' : 'text-sm sm:text-lg'
+  const stationPadding = compact
+    ? 'gap-2 px-2.5 py-2 min-w-[88px] max-w-[168px]'
+    : 'gap-2.5 sm:gap-3 px-3 py-3 sm:px-4 sm:py-4 min-w-[112px] sm:min-w-[144px] max-w-[188px] sm:max-w-[212px]'
 
   return (
     <motion.div
-      className={`flex items-center glass-panel relative
+      className={`flex items-center glass-panel relative overflow-hidden
         ${isCurrentTurn ? 'active-glow' : ''}
         ${isDisconnected ? 'opacity-40' : ''}
-        ${compact
-          ? 'flex-row gap-1.5 px-2 py-1 min-w-0'
-          : 'flex-col gap-1.5 sm:gap-3 px-2 py-2 sm:px-4 sm:py-3 min-w-[80px] sm:min-w-[120px]'
-        }
+        ${compact ? 'flex-row items-start' : 'flex-col items-center'}
+        ${stationPadding}
       `}
+      style={{
+        borderColor: isCurrentTurn ? 'rgba(212, 175, 55, 0.42)' : 'rgba(255, 255, 255, 0.08)',
+        background: isCurrentTurn
+          ? 'linear-gradient(180deg, rgba(212, 175, 55, 0.14), rgba(7, 40, 24, 0.9))'
+          : 'linear-gradient(180deg, rgba(8, 42, 26, 0.92), rgba(4, 22, 14, 0.9))',
+        boxShadow: isCurrentTurn
+          ? '0 14px 34px rgba(0,0,0,0.26)'
+          : '0 12px 28px rgba(0,0,0,0.18)',
+      }}
       initial={{ opacity: 0, scale: 0.8 }}
       animate={{ opacity: isDisconnected ? 0.4 : 1, scale: 1 }}
       transition={{ type: 'spring', stiffness: 200, damping: 20 }}
     >
+      <div
+        className="absolute inset-x-0 top-0 h-px"
+        style={{ background: 'linear-gradient(90deg, rgba(255,255,255,0), rgba(240,208,96,0.45), rgba(255,255,255,0))' }}
+      />
+
       {/* Avatar with timer ring */}
       <div className="relative flex-shrink-0">
         {/* Speaking glow ring */}
@@ -124,50 +139,56 @@ export default function PlayerStation({ player, position, isCurrentTurn, isSelf,
 
       {/* Info section */}
       {compact ? (
-        /* Compact: single-line horizontal info */
-        <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-[10px] font-medium truncate max-w-[50px]">
-            {player.name}
-          </span>
-          {bid !== undefined ? (
-            <span
-              className="text-[9px] px-1 py-0 rounded-full font-medium whitespace-nowrap"
-              style={{
-                background: 'rgba(212, 175, 55, 0.15)',
-                color: 'var(--gold)',
-                border: '1px solid rgba(212, 175, 55, 0.3)',
-              }}
-            >
-              {bid}/{won}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1 min-w-0">
+            <span className="text-[10px] font-semibold tracking-[0.02em] truncate max-w-[74px]">
+              {player.name}
             </span>
-          ) : (
-            <span className="text-[9px] px-1 py-0 rounded-full whitespace-nowrap"
-              style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)' }}
-            >
-              {won}
-            </span>
-          )}
-          {isSpeaking && (
-            <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ duration: 0.6, repeat: Infinity }}>
-              <Mic size={8} className="text-green-400" />
-            </motion.div>
-          )}
-          {isTimerActive && (
-            <motion.span
-              className={`text-[9px] font-mono font-bold ${timerUrgent ? 'text-red-400' : 'text-gold'}`}
-              animate={timerUrgent ? { opacity: [1, 0.4, 1] } : {}}
-              transition={timerUrgent ? { duration: 0.5, repeat: Infinity } : {}}
-            >
-              {timerSeconds}s
-            </motion.span>
-          )}
+            {isSpeaking && (
+              <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ duration: 0.6, repeat: Infinity }}>
+                <Mic size={8} className="text-green-400" />
+              </motion.div>
+            )}
+            {isDisconnected && <WifiOff size={8} className="text-red-400 shrink-0" />}
+          </div>
+
+          <div className="mt-1 flex flex-wrap items-center gap-1">
+            {bid !== undefined && (
+              <span
+                className="game-pill text-[9px] px-1.5 py-0.5 font-medium whitespace-nowrap"
+              >
+                {bid}/{won}
+              </span>
+            )}
+            {!isSelf && cardCount > 0 && (
+              <span
+                className="text-[9px] px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.55)' }}
+              >
+                {cardCount} cards
+              </span>
+            )}
+            {isTimerActive && (
+              <motion.span
+                className={`text-[9px] px-1.5 py-0.5 rounded-full font-mono font-bold whitespace-nowrap ${
+                  timerUrgent ? 'text-red-300' : 'text-gold'
+                }`}
+                style={{
+                  background: timerUrgent ? 'rgba(239, 68, 68, 0.12)' : 'rgba(212, 175, 55, 0.12)',
+                }}
+                animate={timerUrgent ? { opacity: [1, 0.45, 1] } : {}}
+                transition={timerUrgent ? { duration: 0.5, repeat: Infinity } : {}}
+              >
+                {timerSeconds}s
+              </motion.span>
+            )}
+          </div>
         </div>
       ) : (
-        /* Full: original vertical info layout */
         <>
           <div className="flex flex-col items-center gap-1">
             <div className="flex items-center gap-1">
-              <span className="text-xs sm:text-sm font-medium truncate max-w-[70px] sm:max-w-[100px]">
+              <span className="text-xs sm:text-sm font-semibold truncate max-w-[82px] sm:max-w-[112px]">
                 {player.name}
                 {isSelf && <span className="text-[10px] sm:text-xs opacity-40 ml-1">(You)</span>}
               </span>
@@ -181,22 +202,16 @@ export default function PlayerStation({ player, position, isCurrentTurn, isSelf,
               )}
             </div>
 
-            {/* Bid & Won badges */}
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-center gap-1.5">
               {bid !== undefined && (
                 <span
-                  className="text-xs px-2 py-0.5 rounded-full font-medium"
-                  style={{
-                    background: 'rgba(212, 175, 55, 0.15)',
-                    color: 'var(--gold)',
-                    border: '1px solid rgba(212, 175, 55, 0.3)',
-                  }}
+                  className="game-pill text-[11px] px-2 py-0.5 font-medium"
                 >
                   Bid: {bid}
                 </span>
               )}
               <span
-                className="text-xs px-2 py-0.5 rounded-full"
+                className="text-[11px] px-2 py-0.5 rounded-full"
                 style={{
                   background: 'rgba(255, 255, 255, 0.05)',
                   color: 'rgba(255, 255, 255, 0.6)',
@@ -204,13 +219,23 @@ export default function PlayerStation({ player, position, isCurrentTurn, isSelf,
               >
                 Won: {won}
               </span>
+              {!isSelf && cardCount > 0 && (
+                <span
+                  className="text-[11px] px-2 py-0.5 rounded-full"
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.04)',
+                    color: 'rgba(255, 255, 255, 0.5)',
+                  }}
+                >
+                  Cards: {cardCount}
+                </span>
+              )}
             </div>
           </div>
 
-          {/* Opponent card backs (not shown for self or compact) */}
           {!isSelf && cardCount > 0 && (
-            <div className="flex items-center mt-1">
-              <div className="relative w-8 h-5">
+            <div className="flex items-center gap-2 mt-0.5">
+              <div className="relative w-9 h-5">
                 {[...Array(Math.min(cardCount, 3))].map((_, i) => (
                   <div
                     key={i}
@@ -223,11 +248,10 @@ export default function PlayerStation({ player, position, isCurrentTurn, isSelf,
                   />
                 ))}
               </div>
-              <span className="text-xs opacity-40 ml-2">{cardCount}</span>
+              <span className="text-[11px] opacity-40">{cardCount} in hand</span>
             </div>
           )}
 
-          {/* Disconnected label */}
           {isDisconnected && (
             <div className="flex items-center gap-1 text-xs text-red-400 mt-1">
               <WifiOff size={10} />
@@ -249,7 +273,7 @@ export default function PlayerStation({ player, position, isCurrentTurn, isSelf,
           {!compact && (
             <div className="flex items-center gap-1.5 mt-1">
               <motion.div
-                className="text-xs font-bold px-2 py-0.5 rounded-full"
+                className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-[0.18em]"
                 style={{
                   background: 'linear-gradient(135deg, var(--gold), var(--gold-light))',
                   color: '#000',
@@ -257,7 +281,7 @@ export default function PlayerStation({ player, position, isCurrentTurn, isSelf,
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
               >
-                {isSelf ? 'YOUR TURN' : 'PLAYING'}
+                {isSelf ? 'Your Turn' : 'On Move'}
               </motion.div>
               {isTimerActive && (
                 <motion.span

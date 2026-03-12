@@ -123,10 +123,15 @@ export default function PlayerHand() {
 
   // If cards still overflow after scaling, enable horizontal scroll.
   const needsScroll = neededWidth * handScale > availableWidth
+  const trayLabel = phase === 'BIDDING'
+    ? 'Review your hand'
+    : myTurn && phase === 'PLAYING'
+      ? 'Play a card'
+      : `${cardCount} cards in hand`
 
   return (
     <div
-      className={`flex justify-center items-end px-2 sm:px-4 hand-fan ${needsScroll ? 'scrollbar-hide overflow-x-auto' : ''}`}
+      className={`relative flex justify-center items-end px-2 sm:px-4 hand-fan ${needsScroll ? 'scrollbar-hide overflow-x-auto' : ''}`}
       style={{
         minHeight: isLandscapeBidding ? '98px' : isMobile ? '110px' : isLandscapeMobile ? '85px' : '140px',
         paddingBottom: isLandscapeBidding
@@ -139,7 +144,27 @@ export default function PlayerHand() {
       }}
     >
       <div
-        className="flex justify-center items-end"
+        className="pointer-events-none absolute inset-x-1 sm:inset-x-6 bottom-0 top-4 rounded-t-[28px] border"
+        style={{
+          borderColor: 'rgba(212, 175, 55, 0.16)',
+          background: 'linear-gradient(180deg, rgba(6, 30, 19, 0.12), rgba(6, 24, 16, 0.55) 40%, rgba(4, 14, 10, 0.78) 100%)',
+          boxShadow: '0 -10px 40px rgba(0,0,0,0.22)',
+        }}
+      />
+      <div
+        className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2 game-pill px-3 py-1"
+        style={{
+          background: 'rgba(4, 18, 12, 0.88)',
+          boxShadow: '0 8px 20px rgba(0,0,0,0.18)',
+        }}
+      >
+        <span className="text-[9px] sm:text-[10px] uppercase tracking-[0.24em] opacity-55">
+          {trayLabel}
+        </span>
+      </div>
+
+      <div
+        className="relative flex justify-center items-end pt-5 sm:pt-6"
         style={{
           transform: handScale < 1 ? `scale(${handScale})` : undefined,
           transformOrigin: 'bottom center',
