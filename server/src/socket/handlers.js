@@ -812,6 +812,28 @@ function createRoomFromQueuedParties(io, rooms, games, matchedEntries, queueKey)
     });
   });
 
+  room.players.forEach((player) => {
+    emitToUid(io, player.id, 'match-found', {
+      roomCode: code,
+      playerId: player.id,
+      maxPlayers: room.maxPlayers,
+      gameType: room.gameType,
+      players: playerList,
+    });
+  });
+
+  matchedPartyIds.forEach((partyId) => {
+    queuedPartyById.delete(partyId);
+    const partySession = partySessions.get(partyId);
+    if (!partySession) return;
+    partySession.setMatchmaking(null);
+    partySession.setStatus('in_match');
+    partySession.setCurrentRoomCode(code);
+    partySession.clearReadyStates();
+    emitPartyState(io, partySession, 'party-matchmaking-launched');
+  });
+  setPartyRoomCodeMapping(code, matchedPartyIds);
+
   room.status = 'in-progress';
 
   if (gameType === 'donkey') {
@@ -827,28 +849,6 @@ function createRoomFromQueuedParties(io, rooms, games, matchedEntries, queueKey)
     wireGameEvents(io, game, room);
     game.startGame();
   }
-
-  matchedPartyIds.forEach((partyId) => {
-    queuedPartyById.delete(partyId);
-    const partySession = partySessions.get(partyId);
-    if (!partySession) return;
-    partySession.setMatchmaking(null);
-    partySession.setStatus('in_match');
-    partySession.setCurrentRoomCode(code);
-    partySession.clearReadyStates();
-    emitPartyState(io, partySession, 'party-matchmaking-launched');
-  });
-  setPartyRoomCodeMapping(code, matchedPartyIds);
-
-  room.players.forEach((player) => {
-    emitToUid(io, player.id, 'match-found', {
-      roomCode: code,
-      playerId: player.id,
-      maxPlayers: room.maxPlayers,
-      gameType: room.gameType,
-      players: playerList,
-    });
-  });
 
   return {
     roomCode: code,
@@ -1334,6 +1334,23 @@ export default function registerHandlers(io, socket, rooms, games) {
 
     const playerList = toRoomPlayersPayload(room);
 
+    room.players.forEach((player) => {
+      emitToUid(io, player.id, 'match-found', {
+        roomCode: code,
+        playerId: player.id,
+        maxPlayers: room.maxPlayers,
+        gameType: room.gameType,
+        players: playerList,
+      });
+    });
+
+    partySession.setStatus('in_match');
+    partySession.setCurrentRoomCode(code);
+    partySession.setMatchmaking(null);
+    partySession.clearReadyStates();
+    setPartyRoomCodeMapping(code, [partySession.id]);
+    emitPartyState(io, partySession, `launch-${launchMode}`);
+
     room.status = 'in-progress';
     if (room.gameType === 'donkey') {
       const game = new DonkeyGame(code, room.players);
@@ -1348,23 +1365,6 @@ export default function registerHandlers(io, socket, rooms, games) {
       wireGameEvents(io, game, room);
       game.startGame();
     }
-
-    partySession.setStatus('in_match');
-    partySession.setCurrentRoomCode(code);
-    partySession.setMatchmaking(null);
-    partySession.clearReadyStates();
-    setPartyRoomCodeMapping(code, [partySession.id]);
-    emitPartyState(io, partySession, `launch-${launchMode}`);
-
-    room.players.forEach((player) => {
-      emitToUid(io, player.id, 'match-found', {
-        roomCode: code,
-        playerId: player.id,
-        maxPlayers: room.maxPlayers,
-        gameType: room.gameType,
-        players: playerList,
-      });
-    });
 
     return {
       roomCode: code,
