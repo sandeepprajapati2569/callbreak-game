@@ -125,16 +125,7 @@ export default function GameBoard() {
         medium: 'w-[min(64vw,508px)] h-[min(38vh,284px)]',
         wide: 'w-[min(52vw,568px)] h-[min(40vh,328px)]',
       }[layoutTier]
-  const bottomStationBottom = isHeadToHeadPortrait
-    ? 'calc(var(--game-safe-bottom) + 146px)'
-    : {
-        compactPortrait: 'calc(var(--game-safe-bottom) + 148px)',
-        compactLandscape: 'calc(var(--game-safe-bottom) + 108px)',
-        medium: 'calc(var(--game-safe-bottom) + 162px)',
-        wide: 'calc(var(--game-safe-bottom) + 176px)',
-      }[layoutTier]
   const bottomStationDensity = isHeadToHeadPortrait ? 'expanded' : layoutTier === 'wide' ? 'expanded' : 'standard'
-  const bottomUsesLineAnchor = layoutTier === 'compactPortrait' || layoutTier === 'compactLandscape'
   const orbitMetrics = {
     compactPortrait: isHeadToHeadPortrait
       ? { width: 324, height: 210, horizontal: 162, vertical: 105, cornerX: 98 }
@@ -277,12 +268,8 @@ export default function GameBoard() {
 
       {showBottomStation && (
         <div
-          className={players.length === 5 || bottomUsesLineAnchor || isHeadToHeadPortrait
-            ? getPlayerPositionConfig('bottom').className
-            : 'absolute left-1/2 z-20 -translate-x-1/2'}
-          style={players.length === 5 || bottomUsesLineAnchor || isHeadToHeadPortrait
-            ? getPlayerPositionConfig('bottom').style
-            : { bottom: bottomStationBottom }}
+          className={getPlayerPositionConfig('bottom').className}
+          style={getPlayerPositionConfig('bottom').style}
         >
           <PlayerStation
             player={bottomPlayer}
